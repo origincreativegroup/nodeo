@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Image, FileText, Cloud, Settings as SettingsIcon, Sparkles, Zap } from 'lucide-react'
+import { Image, FileText, Cloud, Settings as SettingsIcon } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 
 export default function Dashboard() {

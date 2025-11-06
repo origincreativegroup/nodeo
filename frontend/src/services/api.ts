@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { ImageData, Settings } from '../context/AppContext'
+import { Settings } from '../context/AppContext'
 
 const api = axios.create({
   baseURL: '/api',
