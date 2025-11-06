@@ -41,8 +41,10 @@ from app.services import (
     RenameEngine,
     TemplateParser,
     PREDEFINED_TEMPLATES,
+    metadata_service,
+    AssetType,
 )
-from app.storage import nextcloud_client, r2_client, stream_client, storage_manager
+from app.storage import nextcloud_client, r2_client, stream_client, storage_manager, metadata_sidecar_writer
 
 # Configure logging
 logging.basicConfig(
@@ -619,6 +621,13 @@ async def bulk_update_tags(
     return {"success": True, "updated": updated}
 
 
+class MetadataUpdateRequest(BaseModel):
+    title: str
+    description: str
+    alt_text: str
+    tags: List[str] = []
+
+
 # Rename preview and execution endpoints
 @app.post("/api/rename/preview")
 async def preview_rename(
@@ -640,9 +649,35 @@ async def preview_rename(
         if not image:
             continue
 
+        asset_type = (
+            AssetType.VIDEO
+            if image.mime_type and image.mime_type.startswith("video/")
+            else AssetType.IMAGE
+        )
+
+        sidecar_metadata = metadata_sidecar_writer.load(image.file_path)
+        if sidecar_metadata:
+            enriched_metadata = metadata_service.ensure_metadata_shape(
+                {**sidecar_metadata, 'source': 'sidecar'},
+                asset_type,
+                default_source='sidecar',
+            )
+            sidecar_exists = True
+        else:
+            enriched_metadata = await metadata_service.generate_metadata(
+                image.file_path,
+                asset_type=asset_type,
+                existing={
+                    'description': image.ai_description,
+                    'tags': image.ai_tags,
+                    'alt_text': None,
+                },
+            )
+            sidecar_exists = False
+
         metadata = {
-            'description': image.ai_description or '',
-            'tags': image.ai_tags or [],
+            'description': enriched_metadata.get('description') or image.ai_description or '',
+            'tags': enriched_metadata.get('tags') or image.ai_tags or [],
             'scene': image.ai_scene or '',
             'original_filename': image.original_filename,
             'width': image.width,
@@ -661,7 +696,8 @@ async def preview_rename(
             'image_id': image_id,
             'current_filename': image.current_filename,
             'proposed_filename': new_filename,
-            'metadata': metadata
+            'metadata': enriched_metadata,
+            'sidecar_exists': sidecar_exists,
         })
 
     return {
@@ -752,6 +788,87 @@ async def apply_rename(
         "succeeded": sum(1 for r in results if r.get("success")),
         "results": results
     }
+
+
+@app.post("/api/metadata/{image_id}/sidecar")
+async def save_metadata_sidecar(
+    image_id: int,
+    request: MetadataUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist curated metadata to a JSON sidecar file."""
+
+    from sqlalchemy import select
+
+    result = await db.execute(select(Image).where(Image.id == image_id))
+    image = result.scalar_one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    asset_type = (
+        AssetType.VIDEO
+        if image.mime_type and image.mime_type.startswith("video/")
+        else AssetType.IMAGE
+    )
+
+    normalized_metadata = metadata_service.ensure_metadata_shape(
+        {
+            'title': request.title,
+            'description': request.description,
+            'alt_text': request.alt_text,
+            'tags': request.tags,
+            'source': 'sidecar',
+        },
+        asset_type,
+        default_source='sidecar',
+    )
+
+    try:
+        sidecar_path = metadata_sidecar_writer.write(
+            image.file_path,
+            normalized_metadata,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Asset file not found")
+
+    image.ai_description = normalized_metadata['description']
+    image.ai_tags = normalized_metadata['tags']
+    await db.commit()
+    await db.refresh(image)
+
+    return {
+        "success": True,
+        "image_id": image_id,
+        "sidecar_path": str(sidecar_path),
+        "metadata": normalized_metadata,
+    }
+
+
+@app.get("/api/metadata/{image_id}/sidecar")
+async def download_metadata_sidecar(
+    image_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Download the metadata sidecar for an asset if it exists."""
+
+    from sqlalchemy import select
+
+    result = await db.execute(select(Image).where(Image.id == image_id))
+    image = result.scalar_one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    sidecar_path = metadata_sidecar_writer.path(image.file_path)
+    if not sidecar_path.exists():
+        raise HTTPException(status_code=404, detail="Metadata sidecar not found")
+
+    return FileResponse(
+        path=str(sidecar_path),
+        media_type="application/json",
+        filename=sidecar_path.name,
+    )
 
 
 @app.post("/api/rename/auto")
@@ -983,6 +1100,7 @@ async def list_images(db: AsyncSession = Depends(get_db)):
                 "ai_objects": img.ai_objects,
                 "ai_scene": img.ai_scene,
                 "ai_embedding": img.ai_embedding,
+                "metadata_sidecar_exists": metadata_sidecar_writer.exists(img.file_path),
                 "analyzed_at": img.analyzed_at.isoformat() if img.analyzed_at else None,
                 "created_at": img.created_at.isoformat() if img.created_at else None,
                 "groups": [

@@ -55,7 +55,8 @@ export interface RenamePreview {
   image_id: number
   current_filename: string
   proposed_filename: string
-  metadata?: MediaMetadataSummary
+  metadata: AssetMetadata
+  sidecar_exists: boolean
 }
 
 export interface RenameResponse {
@@ -68,6 +69,15 @@ export interface RenameResponse {
     new_filename?: string
     error?: string
   }>
+}
+
+export interface AssetMetadata {
+  title: string
+  description: string
+  alt_text: string
+  tags: string[]
+  asset_type?: string
+  source?: string
 }
 
 // Image operations
@@ -163,6 +173,42 @@ export const assignImagesToGroup = async (
     { image_ids: imageIds, replace }
   )
   return response.data
+}
+
+export const saveMetadataSidecar = async (
+  imageId: number,
+  metadata: AssetMetadata
+) => {
+  const response = await api.post(`/metadata/${imageId}/sidecar`, metadata)
+  return response.data
+}
+
+export const downloadMetadataSidecar = async (imageId: number) => {
+  const response = await fetch(`/api/metadata/${imageId}/sidecar`)
+
+  if (!response.ok) {
+    throw new Error('Failed to download metadata sidecar')
+  }
+
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition')
+  let filename = `metadata-${imageId}.json`
+
+  if (disposition) {
+    const match = disposition.match(/filename="?([^";]+)"?/)
+    if (match && match[1]) {
+      filename = match[1]
+    }
+  }
+
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(url)
 }
 
 // Template operations

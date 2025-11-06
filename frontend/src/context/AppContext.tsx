@@ -54,6 +54,7 @@ export interface ImageData {
   created_at?: string
   groups?: ImageGroupRef[]
   upload_batch?: UploadBatchRef | null
+  metadata_sidecar_exists?: boolean
 }
 
 export interface Settings {
