@@ -1,7 +1,18 @@
 """
 Database models for jspow
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, JSON, ForeignKey, Enum as SQLEnum
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Boolean,
+    Text,
+    JSON,
+    ForeignKey,
+    Enum as SQLEnum,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -25,6 +36,16 @@ class StorageType(str, Enum):
     STREAM = "stream"
 
 
+class GroupType(str, Enum):
+    """Types of groupings available for images"""
+
+    AI_TAG_CLUSTER = "ai_tag_cluster"
+    AI_SCENE_CLUSTER = "ai_scene_cluster"
+    AI_EMBEDDING_CLUSTER = "ai_embedding_cluster"
+    MANUAL_COLLECTION = "manual_collection"
+    UPLOAD_BATCH = "upload_batch"
+
+
 class Image(Base):
     """Image metadata"""
     __tablename__ = "images"
@@ -43,6 +64,7 @@ class Image(Base):
     ai_tags = Column(JSON)  # List of tags
     ai_objects = Column(JSON)  # Detected objects
     ai_scene = Column(String(200))  # Scene type (indoor, outdoor, etc.)
+    ai_embedding = Column(JSON)  # Vector embedding for similarity clustering
     analyzed_at = Column(DateTime(timezone=True))
 
     # Storage
@@ -54,9 +76,21 @@ class Image(Base):
     # Metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="SET NULL"))
 
     # Relationships
     rename_jobs = relationship("RenameJob", back_populates="image")
+    group_assignments = relationship(
+        "ImageGroupAssociation",
+        back_populates="image",
+        cascade="all, delete-orphan",
+    )
+    groups = relationship(
+        "ImageGroup",
+        secondary="image_group_associations",
+        back_populates="images",
+    )
+    upload_batch = relationship("UploadBatch", back_populates="images")
 
 
 class RenameJob(Base):
@@ -125,3 +159,64 @@ class ProcessingQueue(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     started_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))
+
+
+class UploadBatch(Base):
+    """Logical grouping of uploaded images"""
+
+    __tablename__ = "upload_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    label = Column(String(255), nullable=False)
+    source = Column(String(255))
+    attributes = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    images = relationship("Image", back_populates="upload_batch")
+    group = relationship("ImageGroup", back_populates="upload_batch", uselist=False)
+
+
+class ImageGroup(Base):
+    """Persistent representation of group assignments"""
+
+    __tablename__ = "image_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    group_type = Column(SQLEnum(GroupType), nullable=False)
+    attributes = Column(JSON)
+    is_user_defined = Column(Boolean, default=False)
+    created_by = Column(String(255))
+    upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="SET NULL"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    images = relationship(
+        "Image",
+        secondary="image_group_associations",
+        back_populates="groups",
+    )
+    assignments = relationship(
+        "ImageGroupAssociation",
+        back_populates="group",
+        cascade="all, delete-orphan",
+    )
+    upload_batch = relationship("UploadBatch", back_populates="group")
+
+
+class ImageGroupAssociation(Base):
+    """Mapping table between images and their groups"""
+
+    __tablename__ = "image_group_associations"
+    __table_args__ = (
+        UniqueConstraint("group_id", "image_id", name="uq_image_group_assignment"),
+    )
+
+    group_id = Column(Integer, ForeignKey("image_groups.id", ondelete="CASCADE"), primary_key=True)
+    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), primary_key=True)
+    attributes = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    group = relationship("ImageGroup", back_populates="assignments")
+    image = relationship("Image", back_populates="group_assignments")
