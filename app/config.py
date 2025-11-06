@@ -1,6 +1,7 @@
 """
 Application configuration using Pydantic Settings
 """
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
@@ -42,19 +43,39 @@ class Settings(BaseSettings):
     nextcloud_password: str = "change-me"
     nextcloud_base_path: str = "/jspow"
 
+    # Cloudflare
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
+
     # Cloudflare R2
     cloudflare_r2_account_id: str = ""
     cloudflare_r2_access_key_id: str = ""
     cloudflare_r2_secret_access_key: str = ""
     cloudflare_r2_bucket: str = "jspow-images"
     cloudflare_r2_endpoint: str = ""
+    cloudflare_r2_originals_path: str = "originals/"
+    cloudflare_r2_working_path: str = "working/"
+    cloudflare_r2_exports_path: str = "exports/"
+    cloudflare_r2_metadata_path: str = "metadata/"
 
     # Cloudflare Stream
     cloudflare_stream_account_id: str = ""
     cloudflare_stream_api_token: str = ""
 
+    # Feature Flags
+    feature_flags: List[str] = Field(default_factory=list)
+    enable_cloudflare_r2: bool = False
+    enable_cloudflare_stream: bool = False
+    enable_manifest_generation: bool = False
+
     # Storage
-    upload_dir: str = "/app/uploads"
+    storage_root: str = "/app/storage"
+    storage_originals_dirname: str = "originals"
+    storage_working_dirname: str = "working"
+    storage_exports_dirname: str = "exports"
+    storage_metadata_dirname: str = "metadata"
+    default_project_code: str = "general"
+    upload_dir: str = "/app/storage/working"
     max_upload_size_mb: int = 100
     allowed_image_extensions: str = "jpg,jpeg,png,gif,webp,bmp,tiff"
     allowed_video_extensions: str = "mp4,mov,avi,mkv,webm"

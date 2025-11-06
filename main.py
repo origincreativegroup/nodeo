@@ -12,13 +12,15 @@ from pathlib import Path
 from typing import List, Optional
 import logging
 import uvicorn
+from datetime import datetime
+from uuid import uuid4
 
 from app.config import settings
 from app.database import init_db, close_db, get_db
 from app.models import Image, RenameJob, Template, ProcessingQueue, ProcessStatus, StorageType
 from app.ai import llava_client
 from app.services import RenameEngine, TemplateParser, PREDEFINED_TEMPLATES
-from app.storage import nextcloud_client, r2_client, stream_client
+from app.storage import nextcloud_client, r2_client, stream_client, storage_manager
 
 # Configure logging
 logging.basicConfig(
@@ -36,9 +38,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Create upload directory
+    # Create storage directories
+    storage_manager.ensure_layout()
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
-    logger.info(f"Upload directory: {settings.upload_dir}")
+    logger.info(f"Storage root: {storage_manager.root}")
+    logger.info(f"Working directory: {settings.upload_dir}")
 
     yield
 
@@ -107,21 +111,53 @@ async def upload_images(
                 })
                 continue
 
-            # Save file
-            file_path = Path(settings.upload_dir) / file.filename
-            with open(file_path, "wb") as f:
-                content = await file.read()
-                f.write(content)
+            # Save file into storage layout
+            content = await file.read()
+            uploaded_at = datetime.utcnow()
+            asset_id = uuid4().hex
+            project_code = settings.default_project_code
+
+            original_path = storage_manager.write_file(
+                "originals",
+                asset_id,
+                file.filename,
+                content,
+                created_at=uploaded_at,
+                project=project_code,
+            )
+            working_path = storage_manager.write_file(
+                "working",
+                asset_id,
+                file.filename,
+                content,
+                created_at=uploaded_at,
+                project=project_code,
+            )
+
+            storage_manager.write_metadata(
+                asset_id,
+                {
+                    "asset_id": asset_id,
+                    "project": project_code,
+                    "project_slug": storage_manager.project_slug(project_code),
+                    "original_path": str(original_path),
+                    "working_path": str(working_path),
+                    "uploaded_at": uploaded_at.isoformat(),
+                    "published": False,
+                },
+                created_at=uploaded_at,
+                project=project_code,
+            )
 
             # Create database record
             from PIL import Image as PILImage
-            img = PILImage.open(file_path)
-            width, height = img.size
+            with PILImage.open(working_path) as img:
+                width, height = img.size
 
             image_record = Image(
                 original_filename=file.filename,
                 current_filename=file.filename,
-                file_path=str(file_path),
+                file_path=str(working_path),
                 file_size=len(content),
                 mime_type=file.content_type,
                 width=width,
