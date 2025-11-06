@@ -7,8 +7,14 @@ export interface ImageData {
   file_path: string
   file_size: number
   mime_type: string
+  media_type?: string
   width?: number
   height?: number
+  duration_s?: number
+  frame_rate?: number
+  codec?: string
+  format?: string
+  metadata_id?: number
   ai_description?: string
   ai_tags?: string[]
   ai_objects?: string[]

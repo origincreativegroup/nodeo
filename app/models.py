@@ -1,10 +1,20 @@
 """
 Database models for jspow
 """
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, JSON, ForeignKey, Enum as SQLEnum
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Boolean,
+    Text,
+    JSON,
+    ForeignKey,
+    Float,
+    Enum as SQLEnum,
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from datetime import datetime
 from enum import Enum
 from app.database import Base
 
@@ -25,8 +35,38 @@ class StorageType(str, Enum):
     STREAM = "stream"
 
 
+class MediaType(str, Enum):
+    """Type of media asset"""
+
+    IMAGE = "image"
+    VIDEO = "video"
+
+
+class MediaMetadata(Base):
+    """Cached technical metadata for media assets"""
+
+    __tablename__ = "media_metadata"
+
+    id = Column(Integer, primary_key=True, index=True)
+    file_path = Column(String(1000), nullable=False, unique=True)
+    file_mtime = Column(Float, nullable=False)
+    media_type = Column(SQLEnum(MediaType), nullable=False)
+    width = Column(Integer)
+    height = Column(Integer)
+    duration_s = Column(Float)
+    frame_rate = Column(Float)
+    codec = Column(String(100))
+    media_format = Column(String(100))
+    raw_metadata = Column(JSON)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    assets = relationship("Image", back_populates="media_metadata")
+
+
 class Image(Base):
-    """Image metadata"""
+    """Media asset metadata"""
     __tablename__ = "images"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -35,8 +75,14 @@ class Image(Base):
     file_path = Column(String(1000), nullable=False)
     file_size = Column(Integer, nullable=False)  # bytes
     mime_type = Column(String(100), nullable=False)
+    media_type = Column(SQLEnum(MediaType), default=MediaType.IMAGE, nullable=False)
     width = Column(Integer)
     height = Column(Integer)
+    duration_s = Column(Float)
+    frame_rate = Column(Float)
+    codec = Column(String(100))
+    media_format = Column(String(100))
+    metadata_id = Column(Integer, ForeignKey("media_metadata.id"))
 
     # AI Analysis
     ai_description = Column(Text)
@@ -57,6 +103,7 @@ class Image(Base):
 
     # Relationships
     rename_jobs = relationship("RenameJob", back_populates="image")
+    media_metadata = relationship("MediaMetadata", back_populates="assets")
 
 
 class RenameJob(Base):

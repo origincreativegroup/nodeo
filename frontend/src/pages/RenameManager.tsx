@@ -22,6 +22,24 @@ export default function RenameManager() {
     : analyzedImages.map(img => img.id)
 
   const allSelected = analyzedImages.length > 0 && selectedImageIds.length === analyzedImages.length
+  const quickVariables = [
+    '{description}',
+    '{tags}',
+    '{scene}',
+    '{date}',
+    '{time}',
+    '{index}',
+    '{original}',
+    '{width}',
+    '{height}',
+    '{resolution}',
+    '{duration_s}',
+    '{frame_rate}',
+    '{codec}',
+    '{format}',
+    '{media_type}',
+  ]
+  const quickSymbols = ['_', '-']
 
   useEffect(() => {
     // Auto-generate preview when template or selection changes
@@ -210,54 +228,24 @@ export default function RenameManager() {
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">Quick Insert Variables:</p>
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => insertVariable('{description}')}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                {'{description}'}
-              </button>
-              <button
-                onClick={() => insertVariable('{tags}')}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                {'{tags}'}
-              </button>
-              <button
-                onClick={() => insertVariable('{scene}')}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                {'{scene}'}
-              </button>
-              <button
-                onClick={() => insertVariable('{date}')}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                {'{date}'}
-              </button>
-              <button
-                onClick={() => insertVariable('{time}')}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                {'{time}'}
-              </button>
-              <button
-                onClick={() => insertVariable('{index}')}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                {'{index}'}
-              </button>
-              <button
-                onClick={() => insertVariable('_')}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                _
-              </button>
-              <button
-                onClick={() => insertVariable('-')}
-                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-              >
-                -
-              </button>
+              {quickVariables.map(variable => (
+                <button
+                  key={variable}
+                  onClick={() => insertVariable(variable)}
+                  className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+                >
+                  {variable}
+                </button>
+              ))}
+              {quickSymbols.map(symbol => (
+                <button
+                  key={symbol}
+                  onClick={() => insertVariable(symbol)}
+                  className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+                >
+                  {symbol}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -271,6 +259,14 @@ export default function RenameManager() {
               <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{time}'}</code> - Current time (HHMMSS)</li>
               <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{index}'}</code> - Sequential number (001, 002, ...)</li>
               <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{original}'}</code> - Original filename (without extension)</li>
+              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{width}'}</code> - Media width in pixels</li>
+              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{height}'}</code> - Media height in pixels</li>
+              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{resolution}'}</code> - Width x height (e.g., 1920x1080)</li>
+              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{duration_s}'}</code> - Duration in seconds</li>
+              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{frame_rate}'}</code> - Frames per second</li>
+              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{codec}'}</code> - Codec or compression</li>
+              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{format}'}</code> - Container or format</li>
+              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{media_type}'}</code> - Media type (image or video)</li>
             </ul>
           </div>
         </div>
@@ -415,6 +411,36 @@ export default function RenameManager() {
                       {image?.ai_description && (
                         <div className="mt-2 text-xs text-gray-600 line-clamp-1">
                           {image.ai_description}
+                        </div>
+                      )}
+                      {preview.metadata && (
+                        <div className="mt-2 text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
+                          {preview.metadata.media_type && (
+                            <span>
+                              Type: <span className="uppercase tracking-wide">{preview.metadata.media_type}</span>
+                            </span>
+                          )}
+                          {preview.metadata.width && preview.metadata.height && (
+                            <span>
+                              Resolution: {preview.metadata.width}×{preview.metadata.height}
+                            </span>
+                          )}
+                          {typeof preview.metadata.duration_s === 'number' && (
+                            <span>
+                              Duration: {preview.metadata.duration_s.toFixed(2)}s
+                            </span>
+                          )}
+                          {typeof preview.metadata.frame_rate === 'number' && (
+                            <span>
+                              FPS: {preview.metadata.frame_rate.toFixed(2)}
+                            </span>
+                          )}
+                          {preview.metadata.codec && (
+                            <span>Codec: {preview.metadata.codec.toUpperCase()}</span>
+                          )}
+                          {preview.metadata.format && (
+                            <span>Format: {preview.metadata.format.toUpperCase()}</span>
+                          )}
                         </div>
                       )}
                     </div>

@@ -84,5 +84,33 @@ def test_sanitization():
     assert '_' in result
 
 
+def test_media_metadata_variables():
+    """Ensure media-specific variables are supported"""
+    parser = TemplateParser("{media_type}_{codec}_{duration_s}_{frame_rate}_{format}")
+
+    metadata = {
+        'description': 'Sample clip',
+        'tags': ['demo'],
+        'scene': 'indoor',
+        'original_filename': 'clip.mp4',
+        'width': 1280,
+        'height': 720,
+        'duration_s': 12.5,
+        'frame_rate': 29.97,
+        'codec': 'h264',
+        'format': 'mp4',
+        'media_type': 'video',
+    }
+
+    result = parser.apply(metadata)
+
+    assert 'video' in result
+    assert 'h264' in result
+    # Numeric values should be normalized with underscores
+    assert '12_5' in result
+    assert '29_97' in result
+    assert result.endswith('mp4')
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

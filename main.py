@@ -17,9 +17,22 @@ from uuid import uuid4
 
 from app.config import settings
 from app.database import init_db, close_db, get_db
-from app.models import Image, RenameJob, Template, ProcessingQueue, ProcessStatus, StorageType
+from app.models import (
+    Image,
+    RenameJob,
+    Template,
+    ProcessingQueue,
+    ProcessStatus,
+    StorageType,
+    MediaType,
+)
 from app.ai import llava_client
-from app.services import RenameEngine, TemplateParser, PREDEFINED_TEMPLATES
+from app.services import (
+    RenameEngine,
+    TemplateParser,
+    PREDEFINED_TEMPLATES,
+    MediaMetadataService,
+)
 from app.storage import nextcloud_client, r2_client, stream_client, storage_manager
 
 # Configure logging
@@ -98,12 +111,15 @@ async def upload_images(
         )
 
     results = []
+    metadata_service = MediaMetadataService(db)
 
     for file in files:
         try:
             # Validate file extension
             ext = Path(file.filename).suffix.lower().lstrip('.')
-            if ext not in settings.allowed_image_exts:
+            is_image = ext in settings.allowed_image_exts
+            is_video = ext in settings.allowed_video_exts
+            if not (is_image or is_video):
                 results.append({
                     "filename": file.filename,
                     "success": False,
@@ -150,18 +166,22 @@ async def upload_images(
             )
 
             # Create database record
-            from PIL import Image as PILImage
-            with PILImage.open(working_path) as img:
-                width, height = img.size
-
+            metadata_result = await metadata_service.get_metadata(working_path, mime_type=file.content_type)
+            media_type = MediaType(metadata_result.media_type) if metadata_result.media_type else (MediaType.IMAGE if is_image else MediaType.VIDEO)
             image_record = Image(
                 original_filename=file.filename,
                 current_filename=file.filename,
                 file_path=str(working_path),
                 file_size=len(content),
                 mime_type=file.content_type,
-                width=width,
-                height=height,
+                media_type=media_type,
+                width=metadata_result.width,
+                height=metadata_result.height,
+                duration_s=metadata_result.duration_s,
+                frame_rate=metadata_result.frame_rate,
+                codec=metadata_result.codec,
+                media_format=metadata_result.format,
+                metadata_id=metadata_result.metadata_id,
                 storage_type=StorageType.LOCAL
             )
 
@@ -174,7 +194,8 @@ async def upload_images(
                 "success": True,
                 "id": image_record.id,
                 "size": len(content),
-                "dimensions": f"{width}x{height}"
+                "dimensions": f"{metadata_result.width}x{metadata_result.height}" if metadata_result.width and metadata_result.height else None,
+                "metadata": metadata_result.to_dict(),
             })
 
         except Exception as e:
@@ -401,7 +422,12 @@ async def preview_rename(
             'scene': image.ai_scene or '',
             'original_filename': image.original_filename,
             'width': image.width,
-            'height': image.height
+            'height': image.height,
+            'duration_s': image.duration_s,
+            'frame_rate': image.frame_rate,
+            'codec': image.codec,
+            'format': image.media_format,
+            'media_type': image.media_type.value if image.media_type else None,
         }
 
         ext = Path(image.current_filename).suffix
@@ -410,7 +436,8 @@ async def preview_rename(
         previews.append({
             'image_id': image_id,
             'current_filename': image.current_filename,
-            'proposed_filename': new_filename
+            'proposed_filename': new_filename,
+            'metadata': metadata
         })
 
     return {
@@ -451,7 +478,12 @@ async def apply_rename(
                 'scene': image.ai_scene or '',
                 'original_filename': image.original_filename,
                 'width': image.width,
-                'height': image.height
+                'height': image.height,
+                'duration_s': image.duration_s,
+                'frame_rate': image.frame_rate,
+                'codec': image.codec,
+                'format': image.media_format,
+                'media_type': image.media_type.value if image.media_type else None,
             }
 
             ext = Path(image.current_filename).suffix
@@ -707,8 +739,14 @@ async def list_images(db: AsyncSession = Depends(get_db)):
                 "file_path": img.file_path,
                 "file_size": img.file_size,
                 "mime_type": img.mime_type,
+                "media_type": img.media_type.value if img.media_type else None,
                 "width": img.width,
                 "height": img.height,
+                "duration_s": img.duration_s,
+                "frame_rate": img.frame_rate,
+                "codec": img.codec,
+                "format": img.media_format,
+                "metadata_id": img.metadata_id,
                 "ai_description": img.ai_description,
                 "ai_tags": img.ai_tags,
                 "ai_objects": img.ai_objects,
