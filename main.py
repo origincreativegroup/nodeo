@@ -523,6 +523,60 @@ async def upload_to_r2(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Image listing and serving endpoints
+@app.get("/api/images")
+async def list_images(db: AsyncSession = Depends(get_db)):
+    """Get list of all images"""
+    from sqlalchemy import select
+
+    result = await db.execute(select(Image).order_by(Image.created_at.desc()))
+    images = result.scalars().all()
+
+    return {
+        "images": [
+            {
+                "id": img.id,
+                "filename": img.original_filename,  # For compatibility with frontend
+                "current_filename": img.current_filename,
+                "file_path": img.file_path,
+                "file_size": img.file_size,
+                "mime_type": img.mime_type,
+                "width": img.width,
+                "height": img.height,
+                "ai_description": img.ai_description,
+                "ai_tags": img.ai_tags,
+                "ai_objects": img.ai_objects,
+                "ai_scene": img.ai_scene,
+                "analyzed_at": img.analyzed_at.isoformat() if img.analyzed_at else None,
+                "created_at": img.created_at.isoformat() if img.created_at else None,
+            }
+            for img in images
+        ]
+    }
+
+
+@app.get("/api/images/{image_id}/thumbnail")
+async def get_image_thumbnail(image_id: int, db: AsyncSession = Depends(get_db)):
+    """Serve image thumbnail (or full image for now)"""
+    from sqlalchemy import select
+
+    result = await db.execute(select(Image).where(Image.id == image_id))
+    image = result.scalar_one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    file_path = Path(image.file_path)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Image file not found")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=image.mime_type,
+        filename=image.current_filename
+    )
+
+
 # Serve frontend static files
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():

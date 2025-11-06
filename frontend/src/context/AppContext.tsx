@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
 export interface ImageData {
   id: number
@@ -69,6 +69,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [images, setImages] = useState<ImageData[]>([])
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [selectedImageIds, setSelectedImageIds] = useState<number[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Load images on mount
+  useEffect(() => {
+    const loadImages = async () => {
+      try {
+        const response = await fetch('/api/images')
+        if (response.ok) {
+          const data = await response.json()
+          setImages(data.images || [])
+        }
+      } catch (error) {
+        console.error('Failed to load images:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadImages()
+  }, [])
 
   const addImages = (newImages: ImageData[]) => {
     setImages((prev) => [...prev, ...newImages])
