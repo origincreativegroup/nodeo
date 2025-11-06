@@ -33,7 +33,7 @@ cryptography==42.0.0
 # Utilities
 pydantic==2.5.3
 pydantic-settings==2.1.0
-httpx==0.26.0
+httpx==0.25.2
 python-dateutil==2.8.2
 
 # Background Tasks

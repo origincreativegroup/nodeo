@@ -411,6 +411,6 @@ class StreamClient:
             return False
 
 
-# Global instances
-r2_client = R2Client()
-stream_client = StreamClient()
+# Global instances (only initialize if credentials are configured)
+r2_client = R2Client() if settings.cloudflare_r2_endpoint else None
+stream_client = StreamClient() if settings.cloudflare_stream_api_token else None
