@@ -49,8 +49,57 @@ class GroupType(str, Enum):
     AI_TAG_CLUSTER = "ai_tag_cluster"
     AI_SCENE_CLUSTER = "ai_scene_cluster"
     AI_EMBEDDING_CLUSTER = "ai_embedding_cluster"
+    AI_PROJECT_CLUSTER = "ai_project_cluster"
     MANUAL_COLLECTION = "manual_collection"
     UPLOAD_BATCH = "upload_batch"
+
+
+class ProjectType(str, Enum):
+    """Type of portfolio project"""
+    CLIENT = "client"
+    PERSONAL = "personal"
+    COMMERCIAL = "commercial"
+    STOCK = "stock"
+    EXHIBITION = "exhibition"
+    EXPERIMENTAL = "experimental"
+
+
+class Project(Base):
+    """Portfolio project entity for organizing assets"""
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, unique=True)
+    slug = Column(String(255), nullable=False, unique=True, index=True)
+    description = Column(Text)
+    project_type = Column(SQLEnum(ProjectType), default=ProjectType.PERSONAL)
+
+    # AI identification keywords
+    ai_keywords = Column(JSON)  # List of keywords for AI project matching
+    visual_themes = Column(JSON)  # Color palettes, styles, visual patterns
+
+    # Date range for temporal grouping
+    start_date = Column(DateTime(timezone=True))
+    end_date = Column(DateTime(timezone=True))
+
+    # Storage configuration
+    nextcloud_folder = Column(String(500))  # Dedicated Nextcloud path
+    default_naming_template = Column(String(500))  # Project-specific naming
+
+    # Portfolio metadata
+    portfolio_metadata = Column(JSON)  # Client, industry, URL, testimonials, etc.
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    featured_on_portfolio = Column(Boolean, default=False)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    images = relationship("Image", back_populates="project")
+    groups = relationship("ImageGroup", back_populates="project")
 
 
 class MediaMetadata(Base):
@@ -113,6 +162,7 @@ class Image(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="SET NULL"))
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"))
 
     # Relationships
     rename_jobs = relationship("RenameJob", back_populates="image")
@@ -128,6 +178,7 @@ class Image(Base):
         back_populates="images",
     )
     upload_batch = relationship("UploadBatch", back_populates="images")
+    project = relationship("Project", back_populates="images")
 
 
 class RenameJob(Base):
@@ -226,6 +277,7 @@ class ImageGroup(Base):
     is_user_defined = Column(Boolean, default=False)
     created_by = Column(String(255))
     upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="SET NULL"))
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -240,6 +292,7 @@ class ImageGroup(Base):
         cascade="all, delete-orphan",
     )
     upload_batch = relationship("UploadBatch", back_populates="group")
+    project = relationship("Project", back_populates="groups")
 
 
 class ImageGroupAssociation(Base):
