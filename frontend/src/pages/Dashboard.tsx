@@ -1,16 +1,41 @@
 import { Link } from 'react-router-dom'
-import { Image, FileText, Cloud, Settings as SettingsIcon } from 'lucide-react'
+import { Image, FileText, Cloud, Settings as SettingsIcon, Sparkles, Zap } from 'lucide-react'
+import { useApp } from '../context/AppContext'
 
 export default function Dashboard() {
+  const { images } = useApp()
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-16">
-        <header className="text-center mb-16">
-          <h1 className="text-6xl font-bold text-gray-900 mb-4">jspow</h1>
-          <p className="text-xl text-gray-600">
+      <div className="container mx-auto px-4 py-12">
+        <header className="text-center mb-12">
+          <h1 className="text-5xl font-bold text-gray-900 mb-3">Welcome to jspow</h1>
+          <p className="text-lg text-gray-600">
             AI-Powered Image Organization & Renaming
           </p>
         </header>
+
+        {/* Stats */}
+        {images.length > 0 && (
+          <div className="max-w-4xl mx-auto mb-8 grid grid-cols-3 gap-4">
+            <div className="bg-white rounded-lg shadow p-4 text-center">
+              <div className="text-3xl font-bold text-blue-600">{images.length}</div>
+              <div className="text-sm text-gray-600">Total Images</div>
+            </div>
+            <div className="bg-white rounded-lg shadow p-4 text-center">
+              <div className="text-3xl font-bold text-green-600">
+                {images.filter(img => img.ai_description).length}
+              </div>
+              <div className="text-sm text-gray-600">Analyzed</div>
+            </div>
+            <div className="bg-white rounded-lg shadow p-4 text-center">
+              <div className="text-3xl font-bold text-purple-600">
+                {images.filter(img => !img.ai_description).length}
+              </div>
+              <div className="text-sm text-gray-600">Pending</div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
           <Link

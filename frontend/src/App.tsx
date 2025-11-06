@@ -1,4 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { Toaster } from 'react-hot-toast'
+import { AppProvider } from './context/AppContext'
+import Navigation from './components/Navigation'
 import Dashboard from './pages/Dashboard'
 import ImageGallery from './pages/ImageGallery'
 import RenameManager from './pages/RenameManager'
@@ -7,17 +10,21 @@ import Settings from './pages/Settings'
 
 function App() {
   return (
-    <Router>
-      <div className="min-h-screen bg-gray-100">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/gallery" element={<ImageGallery />} />
-          <Route path="/rename" element={<RenameManager />} />
-          <Route path="/storage" element={<StorageManager />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </div>
-    </Router>
+    <AppProvider>
+      <Router>
+        <div className="min-h-screen bg-gray-50">
+          <Navigation />
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/gallery" element={<ImageGallery />} />
+            <Route path="/rename" element={<RenameManager />} />
+            <Route path="/storage" element={<StorageManager />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+          <Toaster position="top-right" />
+        </div>
+      </Router>
+    </AppProvider>
   )
 }
 
