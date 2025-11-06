@@ -4,8 +4,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
+import time
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -52,11 +53,9 @@ from app.ai.project_classifier import ProjectClassifier
 from app.storage.nextcloud_sync import NextcloudSyncService
 from app.storage import nextcloud_client, r2_client, stream_client, storage_manager, metadata_sidecar_writer
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO if settings.debug else logging.WARNING,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure enhanced logging
+from app.debug_utils import setup_enhanced_logging, RequestLogger
+setup_enhanced_logging(log_level="DEBUG" if settings.debug else "INFO")
 logger = logging.getLogger(__name__)
 
 
@@ -133,6 +132,39 @@ app.add_middleware(
 )
 
 
+# Request/Response logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all HTTP requests and responses with timing"""
+    start_time = time.time()
+
+    # Process request
+    try:
+        response = await call_next(request)
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Log successful request
+        RequestLogger.log_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_ms=duration_ms
+        )
+
+        return response
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Log failed request
+        RequestLogger.log_error(
+            method=request.method,
+            path=request.url.path,
+            error=e
+        )
+
+        raise
+
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -142,6 +174,106 @@ async def health_check():
         "app": settings.app_name,
         "version": settings.app_version
     }
+
+
+# Debug and monitoring endpoints
+@app.get("/debug/system")
+async def debug_system_info(db: AsyncSession = Depends(get_db)):
+    """Get comprehensive system debug information"""
+    from app.debug_utils import DebugInfo
+
+    system_info = DebugInfo.get_system_info()
+    env_info = DebugInfo.get_environment_info()
+    storage_info = await DebugInfo.get_storage_info()
+    db_stats = await DebugInfo.get_database_stats(db)
+
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "system": system_info,
+        "environment": env_info,
+        "storage": storage_info,
+        "database": db_stats,
+    }
+
+
+@app.get("/debug/health-full")
+async def full_health_check(db: AsyncSession = Depends(get_db)):
+    """Comprehensive health check with all service connections"""
+    from app.debug_utils import DebugInfo
+
+    results = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "overall_status": "healthy",
+        "services": {}
+    }
+
+    # Check database
+    db_status = await DebugInfo.check_database_connection(db)
+    results["services"]["database"] = db_status
+    if db_status["status"] != "connected":
+        results["overall_status"] = "degraded"
+
+    # Check Ollama
+    ollama_status = await DebugInfo.check_ollama_connection()
+    results["services"]["ollama"] = ollama_status
+    if ollama_status["status"] != "connected":
+        results["overall_status"] = "degraded"
+
+    # Check Nextcloud
+    nextcloud_status = await DebugInfo.check_nextcloud_connection()
+    results["services"]["nextcloud"] = nextcloud_status
+    if nextcloud_status["status"] != "connected":
+        results["overall_status"] = "degraded"
+
+    # Get database stats
+    db_stats = await DebugInfo.get_database_stats(db)
+    results["database_stats"] = db_stats
+
+    return results
+
+
+@app.get("/debug/logs/recent")
+async def get_recent_logs(lines: int = 50):
+    """Get recent log entries"""
+    try:
+        log_file = Path("logs/jspow.log")
+        if not log_file.exists():
+            return {"error": "Log file not found", "logs": []}
+
+        with open(log_file, "r") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:]
+
+        return {
+            "total_lines": len(all_lines),
+            "showing": len(recent_lines),
+            "logs": [line.strip() for line in recent_lines]
+        }
+    except Exception as e:
+        logger.error(f"Error reading logs: {e}")
+        return {"error": str(e), "logs": []}
+
+
+@app.get("/debug/errors/recent")
+async def get_recent_errors(lines: int = 50):
+    """Get recent error log entries"""
+    try:
+        error_log = Path("logs/errors.log")
+        if not error_log.exists():
+            return {"error": "Error log file not found", "errors": []}
+
+        with open(error_log, "r") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:]
+
+        return {
+            "total_errors": len(all_lines),
+            "showing": len(recent_lines),
+            "errors": [line.strip() for line in recent_lines]
+        }
+    except Exception as e:
+        logger.error(f"Error reading error log: {e}")
+        return {"error": str(e), "errors": []}
 
 
 # Image upload and analysis endpoints
