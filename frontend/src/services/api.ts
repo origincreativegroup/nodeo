@@ -18,6 +18,7 @@ export interface UploadResponse {
     size?: number
     dimensions?: string
     error?: string
+    metadata?: MediaMetadataSummary
   }>
 }
 
@@ -37,10 +38,24 @@ export interface AnalysisResponse {
   }>
 }
 
+export interface MediaMetadataSummary {
+  media_type?: string
+  width?: number
+  height?: number
+  duration_s?: number
+  frame_rate?: number
+  codec?: string
+  format?: string
+  metadata_id?: number
+  file_path?: string
+  file_mtime?: number
+}
+
 export interface RenamePreview {
   image_id: number
   current_filename: string
   proposed_filename: string
+  metadata?: MediaMetadataSummary
 }
 
 export interface RenameResponse {
