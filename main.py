@@ -1,15 +1,18 @@
-"""
-jspow - AI-powered image file renaming and organization tool
-Main FastAPI application
-"""
+"""jspow - AI-powered image file renaming and organization tool
+Main FastAPI application"""
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, BackgroundTasks
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from pathlib import Path
-from typing import List, Optional
+from sqlalchemy.orm import selectinload
+from pydantic import BaseModel, Field
 import logging
 import uvicorn
 from datetime import datetime
@@ -17,10 +20,31 @@ from uuid import uuid4
 
 from app.config import settings
 from app.database import init_db, close_db, get_db
-from app.models import Image, RenameJob, Template, ProcessingQueue, ProcessStatus, StorageType
+from app.models import (
+    GroupType,
+    Image,
+    ImageGroup,
+    ImageGroupAssociation,
+    MediaType,
+    ProcessStatus,
+    ProcessingQueue,
+    RenameJob,
+    StorageType,
+    Template,
+    UploadBatch,
+)
 from app.ai import llava_client
-from app.services import RenameEngine, TemplateParser, PREDEFINED_TEMPLATES
-from app.storage import nextcloud_client, r2_client, stream_client, storage_manager
+from app.services import (
+    GroupingService,
+    GroupSummary,
+    MediaMetadataService,
+    RenameEngine,
+    TemplateParser,
+    PREDEFINED_TEMPLATES,
+    metadata_service,
+    AssetType,
+)
+from app.storage import nextcloud_client, r2_client, stream_client, storage_manager, metadata_sidecar_writer
 
 # Configure logging
 logging.basicConfig(
@@ -28,6 +52,39 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def serialize_group(group: ImageGroup) -> Dict[str, Any]:
+    """Serialize an ImageGroup instance into a JSON-friendly dict."""
+
+    return {
+        "id": group.id,
+        "name": group.name,
+        "description": group.description,
+        "group_type": group.group_type.value if group.group_type else None,
+        "metadata": group.attributes or {},
+        "is_user_defined": group.is_user_defined,
+        "created_by": group.created_by,
+        "image_ids": [assignment.image_id for assignment in group.assignments],
+        "created_at": group.created_at.isoformat() if group.created_at else None,
+        "upload_batch_id": group.upload_batch_id,
+    }
+
+
+def serialize_group_summary(summary: GroupSummary) -> Dict[str, Any]:
+    """Serialize a GroupSummary instance returned by the grouping service."""
+
+    return {
+        "id": summary.id,
+        "name": summary.name,
+        "group_type": summary.group_type,
+        "description": summary.description,
+        "metadata": summary.metadata,
+        "image_ids": summary.image_ids,
+        "is_user_defined": summary.is_user_defined,
+        "created_by": summary.created_by,
+        "created_at": summary.created_at,
+    }
 
 
 @asynccontextmanager
@@ -98,12 +155,40 @@ async def upload_images(
         )
 
     results = []
+    metadata_service = MediaMetadataService(db)
+
+    upload_label = datetime.utcnow().strftime("Upload %Y-%m-%d %H:%M")
+    upload_batch = UploadBatch(
+        label=upload_label,
+        source="web",
+        attributes={"total_expected": len(files)},
+    )
+    db.add(upload_batch)
+    await db.flush()
+
+    upload_group = ImageGroup(
+        name=upload_label,
+        group_type=GroupType.UPLOAD_BATCH,
+        attributes={
+            "cluster_key": f"upload:{upload_batch.id}",
+            "total_expected": len(files),
+            "image_count": 0,
+        },
+        upload_batch_id=upload_batch.id,
+    )
+    db.add(upload_group)
+    await db.flush()
+    await db.commit()
+
+    successful_image_ids: List[int] = []
 
     for file in files:
         try:
             # Validate file extension
             ext = Path(file.filename).suffix.lower().lstrip('.')
-            if ext not in settings.allowed_image_exts:
+            is_image = ext in settings.allowed_image_exts
+            is_video = ext in settings.allowed_video_exts
+            if not (is_image or is_video):
                 results.append({
                     "filename": file.filename,
                     "success": False,
@@ -150,22 +235,36 @@ async def upload_images(
             )
 
             # Create database record
-            from PIL import Image as PILImage
-            with PILImage.open(working_path) as img:
-                width, height = img.size
-
+            metadata_result = await metadata_service.get_metadata(working_path, mime_type=file.content_type)
+            media_type = MediaType(metadata_result.media_type) if metadata_result.media_type else (MediaType.IMAGE if is_image else MediaType.VIDEO)
             image_record = Image(
                 original_filename=file.filename,
                 current_filename=file.filename,
                 file_path=str(working_path),
                 file_size=len(content),
                 mime_type=file.content_type,
-                width=width,
-                height=height,
-                storage_type=StorageType.LOCAL
+                media_type=media_type,
+                width=metadata_result.width,
+                height=metadata_result.height,
+                duration_s=metadata_result.duration_s,
+                frame_rate=metadata_result.frame_rate,
+                codec=metadata_result.codec,
+                media_format=metadata_result.format,
+                metadata_id=metadata_result.metadata_id,
+                storage_type=StorageType.LOCAL,
+                upload_batch_id=upload_batch.id,
             )
 
             db.add(image_record)
+            await db.flush()
+
+            db.add(
+                ImageGroupAssociation(
+                    group_id=upload_group.id,
+                    image_id=image_record.id,
+                )
+            )
+
             await db.commit()
             await db.refresh(image_record)
 
@@ -174,8 +273,10 @@ async def upload_images(
                 "success": True,
                 "id": image_record.id,
                 "size": len(content),
-                "dimensions": f"{width}x{height}"
+                "dimensions": f"{metadata_result.width}x{metadata_result.height}" if metadata_result.width and metadata_result.height else None,
+                "metadata": metadata_result.to_dict(),
             })
+            successful_image_ids.append(image_record.id)
 
         except Exception as e:
             logger.error(f"Error uploading {file.filename}: {e}")
@@ -185,10 +286,18 @@ async def upload_images(
                 "error": str(e)
             })
 
+    upload_group.attributes = {
+        **(upload_group.attributes or {}),
+        "image_count": len(successful_image_ids),
+    }
+    await db.commit()
+
     return {
         "total": len(files),
         "succeeded": sum(1 for r in results if r.get("success")),
-        "results": results
+        "results": results,
+        "upload_batch_id": upload_batch.id,
+        "group_id": upload_group.id,
     }
 
 
@@ -223,6 +332,12 @@ async def analyze_image(
 
         await db.commit()
         await db.refresh(image)
+
+        try:
+            grouping_service = GroupingService(db)
+            await grouping_service.rebuild_ai_groups()
+        except Exception as exc:
+            logger.warning("Failed to rebuild AI groupings: %s", exc)
 
         return {
             "success": True,
@@ -291,6 +406,12 @@ async def batch_analyze_images(
                 "success": False,
                 "error": str(e)
             })
+
+    try:
+        grouping_service = GroupingService(db)
+        await grouping_service.rebuild_ai_groups()
+    except Exception as exc:
+        logger.warning("Failed to rebuild AI groupings after batch: %s", exc)
 
     return {
         "total": len(image_ids),
@@ -362,9 +483,6 @@ async def create_template(
     }
 
 
-# Pydantic models for request bodies
-from pydantic import BaseModel
-
 class RenamePreviewRequest(BaseModel):
     template: str
     image_ids: List[int]
@@ -373,6 +491,142 @@ class RenameApplyRequest(BaseModel):
     template: str
     image_ids: List[int]
     create_backups: bool = True
+
+
+class ManualGroupRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    image_ids: List[int] = Field(default_factory=list)
+
+
+class GroupAssignmentRequest(BaseModel):
+    image_ids: List[int] = Field(default_factory=list)
+    replace: bool = False
+
+
+class BulkTagUpdateRequest(BaseModel):
+    image_ids: List[int] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    operation: Literal["replace", "add", "remove"] = "replace"
+
+
+# Grouping endpoints
+@app.get("/api/groupings")
+async def get_groupings(
+    group_type: Optional[GroupType] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    service = GroupingService(db)
+    groups = await service.list_groups(group_type)
+    return {"groups": [serialize_group_summary(summary) for summary in groups]}
+
+
+@app.post("/api/groupings/rebuild")
+async def rebuild_groupings(db: AsyncSession = Depends(get_db)):
+    service = GroupingService(db)
+    await service.rebuild_ai_groups()
+    groups = await service.list_groups()
+    return {"success": True, "groups": [serialize_group_summary(summary) for summary in groups]}
+
+
+@app.post("/api/groupings/manual")
+async def create_manual_group(
+    request: ManualGroupRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    service = GroupingService(db)
+    group = await service.create_manual_collection(
+        name=request.name,
+        description=request.description,
+        image_ids=request.image_ids,
+    )
+
+    result = await db.execute(
+        select(ImageGroup)
+        .options(selectinload(ImageGroup.assignments))
+        .where(ImageGroup.id == group.id)
+    )
+    persisted_group = result.scalar_one()
+    return {"success": True, "group": serialize_group(persisted_group)}
+
+
+@app.post("/api/groupings/{group_id}/assign")
+async def assign_group_images(
+    group_id: int,
+    request: GroupAssignmentRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(ImageGroup).where(ImageGroup.id == group_id))
+    group = result.scalar_one_or_none()
+
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if group.group_type not in {GroupType.MANUAL_COLLECTION, GroupType.UPLOAD_BATCH}:
+        raise HTTPException(status_code=400, detail="Group does not accept manual assignments")
+
+    service = GroupingService(db)
+    await service.assign_images_to_group(group_id, request.image_ids, replace=request.replace)
+    await db.commit()
+
+    refreshed = await db.execute(
+        select(ImageGroup)
+        .options(selectinload(ImageGroup.assignments))
+        .where(ImageGroup.id == group_id)
+    )
+    persisted_group = refreshed.scalar_one()
+
+    return {"success": True, "group": serialize_group(persisted_group)}
+
+
+@app.patch("/api/images/bulk/tags")
+async def bulk_update_tags(
+    request: BulkTagUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    if not request.image_ids:
+        raise HTTPException(status_code=400, detail="No images selected")
+
+    normalized_tags = [tag.strip().lower() for tag in request.tags if tag.strip()]
+
+    image_result = await db.execute(select(Image).where(Image.id.in_(request.image_ids)))
+    images = image_result.scalars().all()
+
+    if not images:
+        raise HTTPException(status_code=404, detail="No matching images found")
+
+    updated = 0
+    for image in images:
+        current_tags = [tag.strip().lower() for tag in (image.ai_tags or []) if tag]
+
+        if request.operation == "replace":
+            image.ai_tags = normalized_tags
+        elif request.operation == "add":
+            combined = list(dict.fromkeys(current_tags + normalized_tags))
+            image.ai_tags = combined
+        elif request.operation == "remove":
+            image.ai_tags = [tag for tag in current_tags if tag not in normalized_tags]
+        else:
+            continue
+
+        updated += 1
+
+    await db.commit()
+
+    try:
+        await GroupingService(db).rebuild_ai_groups()
+    except Exception as exc:
+        logger.warning("Failed to rebuild groups after tag update: %s", exc)
+
+    return {"success": True, "updated": updated}
+
+
+class MetadataUpdateRequest(BaseModel):
+    title: str
+    description: str
+    alt_text: str
+    tags: List[str] = []
+
 
 # Rename preview and execution endpoints
 @app.post("/api/rename/preview")
@@ -395,13 +649,44 @@ async def preview_rename(
         if not image:
             continue
 
+        asset_type = (
+            AssetType.VIDEO
+            if image.mime_type and image.mime_type.startswith("video/")
+            else AssetType.IMAGE
+        )
+
+        sidecar_metadata = metadata_sidecar_writer.load(image.file_path)
+        if sidecar_metadata:
+            enriched_metadata = metadata_service.ensure_metadata_shape(
+                {**sidecar_metadata, 'source': 'sidecar'},
+                asset_type,
+                default_source='sidecar',
+            )
+            sidecar_exists = True
+        else:
+            enriched_metadata = await metadata_service.generate_metadata(
+                image.file_path,
+                asset_type=asset_type,
+                existing={
+                    'description': image.ai_description,
+                    'tags': image.ai_tags,
+                    'alt_text': None,
+                },
+            )
+            sidecar_exists = False
+
         metadata = {
-            'description': image.ai_description or '',
-            'tags': image.ai_tags or [],
+            'description': enriched_metadata.get('description') or image.ai_description or '',
+            'tags': enriched_metadata.get('tags') or image.ai_tags or [],
             'scene': image.ai_scene or '',
             'original_filename': image.original_filename,
             'width': image.width,
-            'height': image.height
+            'height': image.height,
+            'duration_s': image.duration_s,
+            'frame_rate': image.frame_rate,
+            'codec': image.codec,
+            'format': image.media_format,
+            'media_type': image.media_type.value if image.media_type else None,
         }
 
         ext = Path(image.current_filename).suffix
@@ -410,7 +695,9 @@ async def preview_rename(
         previews.append({
             'image_id': image_id,
             'current_filename': image.current_filename,
-            'proposed_filename': new_filename
+            'proposed_filename': new_filename,
+            'metadata': enriched_metadata,
+            'sidecar_exists': sidecar_exists,
         })
 
     return {
@@ -451,7 +738,12 @@ async def apply_rename(
                 'scene': image.ai_scene or '',
                 'original_filename': image.original_filename,
                 'width': image.width,
-                'height': image.height
+                'height': image.height,
+                'duration_s': image.duration_s,
+                'frame_rate': image.frame_rate,
+                'codec': image.codec,
+                'format': image.media_format,
+                'media_type': image.media_type.value if image.media_type else None,
             }
 
             ext = Path(image.current_filename).suffix
@@ -496,6 +788,87 @@ async def apply_rename(
         "succeeded": sum(1 for r in results if r.get("success")),
         "results": results
     }
+
+
+@app.post("/api/metadata/{image_id}/sidecar")
+async def save_metadata_sidecar(
+    image_id: int,
+    request: MetadataUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Persist curated metadata to a JSON sidecar file."""
+
+    from sqlalchemy import select
+
+    result = await db.execute(select(Image).where(Image.id == image_id))
+    image = result.scalar_one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    asset_type = (
+        AssetType.VIDEO
+        if image.mime_type and image.mime_type.startswith("video/")
+        else AssetType.IMAGE
+    )
+
+    normalized_metadata = metadata_service.ensure_metadata_shape(
+        {
+            'title': request.title,
+            'description': request.description,
+            'alt_text': request.alt_text,
+            'tags': request.tags,
+            'source': 'sidecar',
+        },
+        asset_type,
+        default_source='sidecar',
+    )
+
+    try:
+        sidecar_path = metadata_sidecar_writer.write(
+            image.file_path,
+            normalized_metadata,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Asset file not found")
+
+    image.ai_description = normalized_metadata['description']
+    image.ai_tags = normalized_metadata['tags']
+    await db.commit()
+    await db.refresh(image)
+
+    return {
+        "success": True,
+        "image_id": image_id,
+        "sidecar_path": str(sidecar_path),
+        "metadata": normalized_metadata,
+    }
+
+
+@app.get("/api/metadata/{image_id}/sidecar")
+async def download_metadata_sidecar(
+    image_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Download the metadata sidecar for an asset if it exists."""
+
+    from sqlalchemy import select
+
+    result = await db.execute(select(Image).where(Image.id == image_id))
+    image = result.scalar_one_or_none()
+
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    sidecar_path = metadata_sidecar_writer.path(image.file_path)
+    if not sidecar_path.exists():
+        raise HTTPException(status_code=404, detail="Metadata sidecar not found")
+
+    return FileResponse(
+        path=str(sidecar_path),
+        media_type="application/json",
+        filename=sidecar_path.name,
+    )
 
 
 @app.post("/api/rename/auto")
@@ -695,7 +1068,14 @@ async def list_images(db: AsyncSession = Depends(get_db)):
     """Get list of all images"""
     from sqlalchemy import select
 
-    result = await db.execute(select(Image).order_by(Image.created_at.desc()))
+    result = await db.execute(
+        select(Image)
+            .options(
+                selectinload(Image.group_assignments).selectinload(ImageGroupAssociation.group),
+                selectinload(Image.upload_batch),
+            )
+            .order_by(Image.created_at.desc())
+    )
     images = result.scalars().all()
 
     return {
@@ -707,14 +1087,39 @@ async def list_images(db: AsyncSession = Depends(get_db)):
                 "file_path": img.file_path,
                 "file_size": img.file_size,
                 "mime_type": img.mime_type,
+                "media_type": img.media_type.value if img.media_type else None,
                 "width": img.width,
                 "height": img.height,
+                "duration_s": img.duration_s,
+                "frame_rate": img.frame_rate,
+                "codec": img.codec,
+                "format": img.media_format,
+                "metadata_id": img.metadata_id,
                 "ai_description": img.ai_description,
                 "ai_tags": img.ai_tags,
                 "ai_objects": img.ai_objects,
                 "ai_scene": img.ai_scene,
+                "ai_embedding": img.ai_embedding,
+                "metadata_sidecar_exists": metadata_sidecar_writer.exists(img.file_path),
                 "analyzed_at": img.analyzed_at.isoformat() if img.analyzed_at else None,
                 "created_at": img.created_at.isoformat() if img.created_at else None,
+                "groups": [
+                    {
+                        "id": assignment.group.id,
+                        "name": assignment.group.name,
+                        "group_type": assignment.group.group_type.value,
+                    }
+                    for assignment in img.group_assignments
+                    if assignment.group
+                ],
+                "upload_batch": (
+                    {
+                        "id": img.upload_batch.id,
+                        "label": img.upload_batch.label,
+                    }
+                    if img.upload_batch
+                    else None
+                ),
             }
             for img in images
         ]

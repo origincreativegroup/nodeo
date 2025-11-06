@@ -20,9 +20,14 @@ class TemplateParser:
         {datetime} - Combined datetime (YYYYMMDD_HHMMSS)
         {index} - Sequential index
         {original} - Original filename (without extension)
-        {width} - Image width
-        {height} - Image height
-        {resolution} - width x height
+        {width} - Media width in pixels
+        {height} - Media height in pixels
+        {resolution} - width x height combination
+        {duration_s} - Media duration in seconds
+        {frame_rate} - Frames per second
+        {codec} - Video codec or image compression
+        {format} - Container/format (e.g., mp4, jpeg)
+        {media_type} - Media type (image or video)
     """
 
     VARIABLE_PATTERN = re.compile(r'\{([^}]+)\}')
@@ -98,6 +103,9 @@ class TemplateParser:
             current_time = datetime.now()
 
         # Prepare variable replacements
+        width = metadata.get('width')
+        height = metadata.get('height')
+
         replacements = {
             'description': self._get_description_slug(
                 metadata.get('description', ''), word_count=4
@@ -113,9 +121,14 @@ class TemplateParser:
             'original': self._sanitize(
                 Path(metadata.get('original_filename', 'unknown')).stem
             ),
-            'width': str(metadata.get('width', '')),
-            'height': str(metadata.get('height', '')),
-            'resolution': f"{metadata.get('width', '')}x{metadata.get('height', '')}"
+            'width': str(width or ''),
+            'height': str(height or ''),
+            'resolution': f"{width or ''}x{height or ''}",
+            'duration_s': self._format_numeric(metadata.get('duration_s')),
+            'frame_rate': self._format_numeric(metadata.get('frame_rate')),
+            'codec': self._sanitize(str(metadata.get('codec', ''))),
+            'format': self._sanitize(str(metadata.get('format', ''))),
+            'media_type': self._sanitize(str(metadata.get('media_type', ''))),
         }
 
         # Apply replacements
@@ -131,6 +144,20 @@ class TemplateParser:
         filename = self._sanitize(filename, max_length=100)
 
         return filename
+
+    def _format_numeric(self, value: Any) -> str:
+        """Format numeric metadata for safe filename insertion."""
+        if value is None or value == "":
+            return ""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return self._sanitize(str(value))
+
+        text = f"{number:.3f}".rstrip('0').rstrip('.')
+        if '.' in text:
+            text = text.replace('.', '_')
+        return text
 
     def preview(self, metadata: Dict[str, Any], count: int = 1) -> list:
         """
@@ -174,7 +201,8 @@ class TemplateParser:
             # Check for unknown variables
             valid_vars = {
                 'description', 'tags', 'scene', 'date', 'time',
-                'datetime', 'index', 'original', 'width', 'height', 'resolution'
+                'datetime', 'index', 'original', 'width', 'height', 'resolution',
+                'duration_s', 'frame_rate', 'codec', 'format', 'media_type'
             }
             unknown = set(variables) - valid_vars
             if unknown:
@@ -187,7 +215,12 @@ class TemplateParser:
                 'scene': 'indoor',
                 'original_filename': 'test.jpg',
                 'width': 1920,
-                'height': 1080
+                'height': 1080,
+                'duration_s': 12.34,
+                'frame_rate': 29.97,
+                'codec': 'h264',
+                'format': 'mp4',
+                'media_type': 'video',
             }
             result = parser.apply(dummy_metadata)
 

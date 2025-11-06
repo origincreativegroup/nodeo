@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { Settings } from '../context/AppContext'
+import { Settings, GroupType } from '../context/AppContext'
 
 const api = axios.create({
   baseURL: '/api',
@@ -18,6 +18,7 @@ export interface UploadResponse {
     size?: number
     dimensions?: string
     error?: string
+    metadata?: MediaMetadataSummary
   }>
 }
 
@@ -37,10 +38,25 @@ export interface AnalysisResponse {
   }>
 }
 
+export interface MediaMetadataSummary {
+  media_type?: string
+  width?: number
+  height?: number
+  duration_s?: number
+  frame_rate?: number
+  codec?: string
+  format?: string
+  metadata_id?: number
+  file_path?: string
+  file_mtime?: number
+}
+
 export interface RenamePreview {
   image_id: number
   current_filename: string
   proposed_filename: string
+  metadata: AssetMetadata
+  sidecar_exists: boolean
 }
 
 export interface RenameResponse {
@@ -53,6 +69,15 @@ export interface RenameResponse {
     new_filename?: string
     error?: string
   }>
+}
+
+export interface AssetMetadata {
+  title: string
+  description: string
+  alt_text: string
+  tags: string[]
+  asset_type?: string
+  source?: string
 }
 
 // Image operations
@@ -103,6 +128,87 @@ export const applyRename = async (
     create_backups: createBackups,
   })
   return response.data
+}
+
+export interface GroupingRecord {
+  id: number
+  name: string
+  description?: string | null
+  group_type: GroupType
+  metadata?: Record<string, unknown>
+  image_ids: number[]
+  is_user_defined?: boolean
+  created_by?: string | null
+  created_at?: string | null
+}
+
+export interface ManualGroupPayload {
+  name: string
+  description?: string
+  image_ids?: number[]
+}
+
+export const rebuildGroupings = async () => {
+  const response = await api.post<{ success: boolean; groups: GroupingRecord[] }>(
+    '/groupings/rebuild'
+  )
+  return response.data
+}
+
+export const createManualCollection = async (payload: ManualGroupPayload) => {
+  const response = await api.post<{ success: boolean; group: GroupingRecord }>(
+    '/groupings/manual',
+    payload
+  )
+  return response.data
+}
+
+export const assignImagesToGroup = async (
+  groupId: number,
+  imageIds: number[],
+  replace: boolean = false
+) => {
+  const response = await api.post<{ success: boolean; group: GroupingRecord }>(
+    `/groupings/${groupId}/assign`,
+    { image_ids: imageIds, replace }
+  )
+  return response.data
+}
+
+export const saveMetadataSidecar = async (
+  imageId: number,
+  metadata: AssetMetadata
+) => {
+  const response = await api.post(`/metadata/${imageId}/sidecar`, metadata)
+  return response.data
+}
+
+export const downloadMetadataSidecar = async (imageId: number) => {
+  const response = await fetch(`/api/metadata/${imageId}/sidecar`)
+
+  if (!response.ok) {
+    throw new Error('Failed to download metadata sidecar')
+  }
+
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition')
+  let filename = `metadata-${imageId}.json`
+
+  if (disposition) {
+    const match = disposition.match(/filename="?([^";]+)"?/)
+    if (match && match[1]) {
+      filename = match[1]
+    }
+  }
+
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(url)
 }
 
 // Template operations
