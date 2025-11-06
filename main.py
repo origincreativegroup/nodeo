@@ -47,6 +47,7 @@ from app.services import (
     AssetType,
 )
 from app.services.project_service import ProjectService
+from app.services.project_rename import ProjectRenameService
 from app.ai.project_classifier import ProjectClassifier
 from app.storage.nextcloud_sync import NextcloudSyncService
 from app.storage import nextcloud_client, r2_client, stream_client, storage_manager, metadata_sidecar_writer
@@ -1079,6 +1080,107 @@ async def auto_rename_images(
         "succeeded": sum(1 for r in results if r.get("success")),
         "results": results
     }
+
+
+# Project-Aware Rename endpoints (Phase 4)
+@app.get("/api/projects/{project_id}/rename/suggestions")
+async def get_project_rename_suggestions(
+    project_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get portfolio-optimized template suggestions for a project"""
+    try:
+        rename_service = ProjectRenameService(db)
+        suggestions = await rename_service.get_portfolio_suggestions(project_id)
+        return suggestions
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting rename suggestions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/projects/{project_id}/rename/preview")
+async def preview_project_rename(
+    project_id: int,
+    template: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Preview project-aware rename for all assets in project"""
+    try:
+        rename_service = ProjectRenameService(db)
+        previews = await rename_service.preview_project_rename(
+            project_id=project_id,
+            template=template,
+        )
+
+        return {
+            "project_id": project_id,
+            "template": template,
+            "total_assets": len(previews),
+            "previews": [
+                {
+                    "image_id": p.image_id,
+                    "original_filename": p.original_filename,
+                    "proposed_filename": p.proposed_filename,
+                    "project_number": p.project_number,
+                }
+                for p in previews
+            ],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error previewing rename: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/projects/{project_id}/rename/apply")
+async def apply_project_rename(
+    project_id: int,
+    template: str,
+    create_backups: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """Apply project-aware rename to all assets in project"""
+    try:
+        rename_service = ProjectRenameService(db)
+        result = await rename_service.apply_project_rename(
+            project_id=project_id,
+            template=template,
+            create_backups=create_backups,
+        )
+
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error applying rename: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/images/{image_id}/rename/project-aware")
+async def rename_image_with_project(
+    image_id: int,
+    template: Optional[str] = None,
+    create_backup: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """Rename a single image using project context"""
+    try:
+        rename_service = ProjectRenameService(db)
+        result = await rename_service.rename_single_with_project(
+            image_id=image_id,
+            template=template,
+            create_backup=create_backup,
+        )
+
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error renaming image: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Storage integration endpoints
