@@ -326,22 +326,33 @@ async def create_template(
     }
 
 
+# Pydantic models for request bodies
+from pydantic import BaseModel
+
+class RenamePreviewRequest(BaseModel):
+    template: str
+    image_ids: List[int]
+
+class RenameApplyRequest(BaseModel):
+    template: str
+    image_ids: List[int]
+    create_backups: bool = True
+
 # Rename preview and execution endpoints
 @app.post("/api/rename/preview")
 async def preview_rename(
-    template: str,
-    image_ids: List[int],
+    request: RenamePreviewRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Preview rename operation"""
     from sqlalchemy import select
 
     # Create rename engine
-    engine = RenameEngine(template=template)
+    engine = RenameEngine(template=request.template)
 
     previews = []
 
-    for idx, image_id in enumerate(image_ids, start=1):
+    for idx, image_id in enumerate(request.image_ids, start=1):
         result = await db.execute(select(Image).where(Image.id == image_id))
         image = result.scalar_one_or_none()
 
@@ -367,26 +378,25 @@ async def preview_rename(
         })
 
     return {
-        "template": template,
+        "template": request.template,
         "previews": previews
     }
 
 
 @app.post("/api/rename/apply")
 async def apply_rename(
-    template: str,
-    image_ids: List[int],
-    create_backups: bool = True,
+    request: RenameApplyRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Apply rename operation"""
     from sqlalchemy import select
     from datetime import datetime
+    import shutil
 
-    engine = RenameEngine(template=template)
+    engine = RenameEngine(template=request.template)
     results = []
 
-    for idx, image_id in enumerate(image_ids, start=1):
+    for idx, image_id in enumerate(request.image_ids, start=1):
         result = await db.execute(select(Image).where(Image.id == image_id))
         image = result.scalar_one_or_none()
 
@@ -415,7 +425,7 @@ async def apply_rename(
             rename_result = engine.apply_rename(
                 image.file_path,
                 new_filename,
-                create_backup=create_backups
+                create_backup=request.create_backups
             )
 
             if rename_result['success']:
@@ -446,7 +456,7 @@ async def apply_rename(
             })
 
     return {
-        "total": len(image_ids),
+        "total": len(request.image_ids),
         "succeeded": sum(1 for r in results if r.get("success")),
         "results": results
     }
