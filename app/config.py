@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     nextcloud_username: str = "admin"
     nextcloud_password: str = "change-me"
     nextcloud_base_path: str = "/jspow"
+    nextcloud_auto_sync: bool = True  # Auto-sync on project assignment
+    nextcloud_sync_strategy: str = "mirror"  # mirror | backup | primary
 
     # Cloudflare
     cloudflare_account_id: str = ""

@@ -48,6 +48,7 @@ from app.services import (
 )
 from app.services.project_service import ProjectService
 from app.ai.project_classifier import ProjectClassifier
+from app.storage.nextcloud_sync import NextcloudSyncService
 from app.storage import nextcloud_client, r2_client, stream_client, storage_manager, metadata_sidecar_writer
 
 # Configure logging
@@ -1451,9 +1452,13 @@ async def assign_assets_to_project(
     request: ProjectAssignImagesRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Assign assets to a project"""
+    """Assign assets to a project (with automatic Nextcloud sync)"""
     try:
-        project_service = ProjectService(db)
+        # Create sync service
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+
+        # Create project service with sync
+        project_service = ProjectService(db, sync_service=sync_service)
         project = await project_service.assign_images_to_project(
             project_id,
             request.image_ids,
@@ -1465,6 +1470,7 @@ async def assign_assets_to_project(
             "project_id": project.id,
             "project_name": project.name,
             "assigned_count": len(project.images),
+            "auto_sync_enabled": settings.nextcloud_auto_sync,
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1704,6 +1710,145 @@ async def learn_from_assignment(
         return {"success": True, "message": "Learning complete"}
     except Exception as e:
         logger.error(f"Error learning from assignment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Nextcloud Sync endpoints
+@app.post("/api/nextcloud/sync/project/{project_id}")
+async def sync_project_to_nextcloud(
+    project_id: int,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Sync all assets in a project to Nextcloud
+
+    Args:
+        project_id: Project ID
+        force: Force re-sync of already synced assets
+    """
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        result = await sync_service.sync_project(project_id, force=force)
+
+        return {
+            "success": True,
+            "project_id": result.project_id,
+            "project_name": result.project_name,
+            "total_assets": result.total_assets,
+            "synced": result.synced,
+            "failed": result.failed,
+            "skipped": result.skipped,
+            "results": [
+                {
+                    "image_id": r.image_id,
+                    "success": r.success,
+                    "nextcloud_path": r.nextcloud_path,
+                    "error": r.error,
+                }
+                for r in result.results
+            ],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error syncing project {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/nextcloud/sync/batch")
+async def sync_batch_to_nextcloud(
+    image_ids: List[int],
+    force: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Sync multiple assets to Nextcloud
+
+    Args:
+        image_ids: List of image IDs to sync
+        force: Force re-sync of already synced assets
+    """
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        results = await sync_service.sync_batch(image_ids, force=force)
+
+        succeeded = sum(1 for r in results if r.success)
+        failed = sum(1 for r in results if not r.success)
+
+        return {
+            "success": True,
+            "total": len(image_ids),
+            "synced": succeeded,
+            "failed": failed,
+            "results": [
+                {
+                    "image_id": r.image_id,
+                    "success": r.success,
+                    "nextcloud_path": r.nextcloud_path,
+                    "error": r.error,
+                }
+                for r in results
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error syncing batch: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/nextcloud/sync/status/{project_id}")
+async def get_sync_status(
+    project_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get Nextcloud sync status for a project"""
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        status = await sync_service.get_sync_status(project_id)
+        return status
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting sync status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/nextcloud/validate")
+async def validate_nextcloud_connection(db: AsyncSession = Depends(get_db)):
+    """Test Nextcloud connection"""
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        result = await sync_service.validate_nextcloud_connection()
+        return result
+    except Exception as e:
+        logger.error(f"Error validating Nextcloud connection: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/nextcloud/import/{project_id}")
+async def import_from_nextcloud(
+    project_id: int,
+    remote_folder: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Import files from Nextcloud into a project
+
+    Args:
+        project_id: Project to import into
+        remote_folder: Remote folder to import from (uses project folder if None)
+    """
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        result = await sync_service.import_from_nextcloud(
+            project_id=project_id,
+            remote_folder=remote_folder,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error importing from Nextcloud: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
