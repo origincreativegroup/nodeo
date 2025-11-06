@@ -80,7 +80,59 @@ OLLAMA_MODEL=llava
 NEXTCLOUD_URL=https://nextcloud.lan
 NEXTCLOUD_USERNAME=your-username
 NEXTCLOUD_PASSWORD=your-password
+
+# Storage layout
+STORAGE_ROOT=/app/storage
+DEFAULT_PROJECT_CODE=general
+
+# Feature flags (disabled by default)
+ENABLE_MANIFEST_GENERATION=false
+ENABLE_CLOUDFLARE_R2=false
+ENABLE_CLOUDFLARE_STREAM=false
+
+# Cloudflare (optional)
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_R2_ACCOUNT_ID=
+CLOUDFLARE_R2_ACCESS_KEY_ID=
+CLOUDFLARE_R2_SECRET_ACCESS_KEY=
+CLOUDFLARE_R2_BUCKET=jspow-images
+CLOUDFLARE_R2_ENDPOINT=
+CLOUDFLARE_R2_ORIGINALS_PATH=originals/
+CLOUDFLARE_R2_WORKING_PATH=working/
+CLOUDFLARE_R2_EXPORTS_PATH=exports/
+CLOUDFLARE_R2_METADATA_PATH=metadata/
+CLOUDFLARE_STREAM_ACCOUNT_ID=
+CLOUDFLARE_STREAM_API_TOKEN=
 ```
+
+## Storage layout
+
+Uploaded assets are now organized under `STORAGE_ROOT` using a deterministic structure to separate working files from immutable originals:
+
+```
+/app/storage/{type}/{year}/{project}/{asset_id}/
+```
+
+- `type` — one of `originals`, `working`, `exports`, or `metadata`
+- `year` — the four digit year the asset was ingested
+- `project` — slug generated from `DEFAULT_PROJECT_CODE` (or a supplied project label)
+- `asset_id` — unique identifier per upload (UUID)
+
+Original uploads are preserved in the `originals` tree, while the `working` tree contains the files referenced by the database and rename workflows. Metadata JSON blobs are stored alongside each asset under the `metadata` tree, enabling synchronization tooling to capture publication status and historical context.
+
+## Manifests and sync preparation
+
+Each `{type}/{year}/{project}` folder can generate a `manifest.json` containing file hashes, stored metadata, and a `published` flag for every asset directory. This supports eventual synchronization with Cloudflare or other remote targets. To generate a manifest, run a short Python snippet (for example from `poetry run python` or the FastAPI shell):
+
+```python
+from app.storage import storage_manager
+
+# Generate manifest for the current year's working copies
+storage_manager.generate_manifest("working", 2024, "general")
+```
+
+Manifests live inside the corresponding folder (e.g., `/app/storage/working/2024/general/manifest.json`) and can be consumed by future sync tooling to detect drift between local and remote copies.
 
 ## Usage
 
