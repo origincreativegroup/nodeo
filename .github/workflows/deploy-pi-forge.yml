@@ -1,0 +1,133 @@
+name: Deploy to Pi-Forge
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set deployment variables
+        run: |
+          echo "DEPLOY_DIR=/home/admin/jspow" >> $GITHUB_ENV
+          echo "BACKUP_DIR=/home/admin/deployments/jspow/backup_$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
+          echo "COMMIT_SHA=${{ github.sha }}" >> $GITHUB_ENV
+
+      - name: Sync code to deployment directory
+        run: |
+          # Create deployment directory if it doesn't exist
+          mkdir -p $DEPLOY_DIR
+
+          # Sync code (preserving .env file)
+          rsync -av --delete \
+            --exclude '.git' \
+            --exclude '.env' \
+            --exclude 'node_modules' \
+            --exclude '__pycache__' \
+            --exclude 'uploads' \
+            ./ $DEPLOY_DIR/
+
+      - name: Create backup of current deployment
+        run: |
+          # Create backup directory
+          mkdir -p $BACKUP_DIR
+
+          # Backup current deployment
+          if [ -d "$DEPLOY_DIR" ]; then
+            cp -r $DEPLOY_DIR/* $BACKUP_DIR/ || true
+            echo "Backup created at $BACKUP_DIR"
+          fi
+
+      - name: Build and deploy containers
+        working-directory: /home/admin/jspow
+        run: |
+          # Stop existing containers
+          docker compose down || true
+
+          # Build new images with no cache
+          docker compose build --no-cache
+
+          # Start containers
+          docker compose up -d --force-recreate
+
+          # Wait for health check
+          echo "Waiting for application to start..."
+          sleep 15
+
+      - name: Health check
+        run: |
+          # Check if application is responding
+          max_attempts=10
+          attempt=0
+
+          while [ $attempt -lt $max_attempts ]; do
+            if curl -f http://localhost:8002/health; then
+              echo "Health check passed!"
+              exit 0
+            fi
+
+            attempt=$((attempt + 1))
+            echo "Health check attempt $attempt/$max_attempts failed, retrying..."
+            sleep 3
+          done
+
+          echo "Health check failed after $max_attempts attempts"
+          exit 1
+
+      - name: Post-deployment tests
+        run: |
+          # Check container status
+          docker compose -f /home/admin/jspow/docker-compose.yml ps
+
+          # Check logs for errors
+          docker compose -f /home/admin/jspow/docker-compose.yml logs --tail=50 jspow-app
+
+      - name: Cleanup old backups
+        if: success()
+        run: |
+          # Keep only last 5 backups
+          cd /home/admin/deployments/jspow/
+          ls -t | tail -n +6 | xargs -r rm -rf
+          echo "Cleaned up old backups"
+
+      - name: Create deployment marker
+        if: success()
+        run: |
+          echo "Deployment successful at $(date)" > /home/admin/jspow/.last_deploy
+          echo "Commit: $COMMIT_SHA" >> /home/admin/jspow/.last_deploy
+
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "========================================="
+          echo "Deployment completed successfully!"
+          echo "Commit: $COMMIT_SHA"
+          echo "Time: $(date)"
+          echo "========================================="
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed! Rolling back..."
+
+          # Stop failed deployment
+          docker compose -f /home/admin/jspow/docker-compose.yml down || true
+
+          # Restore from backup
+          if [ -d "$BACKUP_DIR" ]; then
+            rsync -av --delete $BACKUP_DIR/ $DEPLOY_DIR/
+
+            # Restart previous version
+            cd $DEPLOY_DIR
+            docker compose up -d
+
+            echo "Rollback completed"
+          else
+            echo "No backup found for rollback"
+          fi

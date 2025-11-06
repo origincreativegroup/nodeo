@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: jspow-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jspow
+    ports:
+      - "5433:5432"  # Different port to avoid conflict with js-craw
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: jspow-redis
+    ports:
+      - "6380:6379"  # Different port to avoid conflict
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  jspow-app:
+    build: .
+    container_name: jspow-app
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Application
+      SECRET_KEY: ${SECRET_KEY:-change-me-to-random-string}
+      DEBUG: ${DEBUG:-false}
+
+      # Database
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/jspow
+
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+
+      # Ollama (external on ai-srv)
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://192.168.50.248:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llava}
+
+      # Nextcloud
+      NEXTCLOUD_URL: ${NEXTCLOUD_URL:-https://nextcloud.lan}
+      NEXTCLOUD_USERNAME: ${NEXTCLOUD_USERNAME}
+      NEXTCLOUD_PASSWORD: ${NEXTCLOUD_PASSWORD}
+      NEXTCLOUD_BASE_PATH: ${NEXTCLOUD_BASE_PATH:-/jspow}
+
+      # Cloudflare R2
+      CLOUDFLARE_R2_ACCOUNT_ID: ${CLOUDFLARE_R2_ACCOUNT_ID}
+      CLOUDFLARE_R2_ACCESS_KEY_ID: ${CLOUDFLARE_R2_ACCESS_KEY_ID}
+      CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${CLOUDFLARE_R2_SECRET_ACCESS_KEY}
+      CLOUDFLARE_R2_BUCKET: ${CLOUDFLARE_R2_BUCKET:-jspow-images}
+      CLOUDFLARE_R2_ENDPOINT: ${CLOUDFLARE_R2_ENDPOINT}
+
+      # Cloudflare Stream
+      CLOUDFLARE_STREAM_ACCOUNT_ID: ${CLOUDFLARE_STREAM_ACCOUNT_ID}
+      CLOUDFLARE_STREAM_API_TOKEN: ${CLOUDFLARE_STREAM_API_TOKEN}
+    volumes:
+      - uploads_data:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  uploads_data:
