@@ -1,11 +1,37 @@
 import { useState, useEffect } from 'react'
-import { FileText, Eye, Save, AlertCircle, CheckSquare, Square, Sparkles } from 'lucide-react'
+import {
+  FileText,
+  Eye,
+  Save,
+  AlertCircle,
+  CheckSquare,
+  Square,
+  Sparkles,
+  HardDriveDownload,
+  Download,
+} from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import Button from '../components/Button'
 import LoadingSpinner from '../components/LoadingSpinner'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
-import { previewRename, applyRename, RenamePreview } from '../services/api'
+import {
+  previewRename,
+  applyRename,
+  RenamePreview,
+  saveMetadataSidecar,
+  downloadMetadataSidecar,
+  AssetMetadata,
+} from '../services/api'
+
+type MetadataFormState = {
+  title: string
+  description: string
+  alt_text: string
+  tags: string
+  source?: string
+  asset_type?: string
+}
 
 export default function RenameManager() {
   const { images, updateImage, selectedImageIds, toggleImageSelection, clearSelection, selectAll } = useApp()
@@ -15,6 +41,9 @@ export default function RenameManager() {
   const [applying, setApplying] = useState(false)
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [createBackups, setCreateBackups] = useState(true)
+  const [metadataDrafts, setMetadataDrafts] = useState<Record<number, MetadataFormState>>({})
+  const [metadataSavingId, setMetadataSavingId] = useState<number | null>(null)
+  const [metadataDownloadingId, setMetadataDownloadingId] = useState<number | null>(null)
 
   const analyzedImages = images.filter(img => img.ai_description)
   const imagesToRename = selectedImageIds.length > 0
@@ -23,12 +52,77 @@ export default function RenameManager() {
 
   const allSelected = analyzedImages.length > 0 && selectedImageIds.length === analyzedImages.length
 
+  const formatMetadataSource = (source?: string) => {
+    switch (source) {
+      case 'sidecar':
+        return 'Saved sidecar'
+      case 'edited':
+        return 'Edited metadata'
+      case 'llava':
+        return 'AI (LLaVA)'
+      case 'fallback':
+        return 'AI fallback'
+      case 'manual':
+        return 'Manual entry'
+      default:
+        return 'AI generated'
+    }
+  }
+
+  const initializeMetadataDrafts = (items: RenamePreview[]) => {
+    if (items.length === 0) {
+      setMetadataDrafts({})
+      return
+    }
+
+    const drafts: Record<number, MetadataFormState> = {}
+    items.forEach(item => {
+      drafts[item.image_id] = {
+        title: item.metadata?.title ?? '',
+        description: item.metadata?.description ?? '',
+        alt_text: item.metadata?.alt_text ?? '',
+        tags: (item.metadata?.tags ?? []).join(', '),
+        source: item.metadata?.source,
+        asset_type: item.metadata?.asset_type,
+      }
+    })
+    setMetadataDrafts(drafts)
+  }
+
+  const handleMetadataChange = (
+    imageId: number,
+    field: 'title' | 'description' | 'alt_text' | 'tags',
+    value: string
+  ) => {
+    setMetadataDrafts(prev => {
+      const preview = previews.find(p => p.image_id === imageId)
+      const base: MetadataFormState = prev[imageId] ?? {
+        title: preview?.metadata.title ?? '',
+        description: preview?.metadata.description ?? '',
+        alt_text: preview?.metadata.alt_text ?? '',
+        tags: (preview?.metadata.tags ?? []).join(', '),
+        source: preview?.metadata.source,
+        asset_type: preview?.metadata.asset_type,
+      }
+
+      return {
+        ...prev,
+        [imageId]: {
+          ...base,
+          [field]: value,
+          source: 'edited',
+        },
+      }
+    })
+  }
+
   useEffect(() => {
     // Auto-generate preview when template or selection changes
     if (template && imagesToRename.length > 0) {
       handlePreview()
     } else {
       setPreviews([])
+      setMetadataDrafts({})
     }
   }, [template, selectedImageIds.length])
 
@@ -48,10 +142,12 @@ export default function RenameManager() {
     try {
       const response = await previewRename(template, imagesToRename)
       setPreviews(response.previews)
+      initializeMetadataDrafts(response.previews)
     } catch (error) {
       console.error('Preview error:', error)
       toast.error('Failed to generate preview')
       setPreviews([])
+      setMetadataDrafts({})
     } finally {
       setLoadingPreview(false)
     }
@@ -108,6 +204,92 @@ export default function RenameManager() {
       toast.error('Error auto-renaming images', { id: 'auto-rename' })
     } finally {
       setApplying(false)
+    }
+  }
+
+  const handlePersistMetadata = async (imageId: number) => {
+    const draft = metadataDrafts[imageId]
+    if (!draft) {
+      toast.error('No metadata available for this asset')
+      return
+    }
+
+    const payload: AssetMetadata = {
+      title: draft.title.trim(),
+      description: draft.description.trim(),
+      alt_text: draft.alt_text.trim(),
+      tags: draft.tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(Boolean),
+    }
+
+    const toastId = `metadata-save-${imageId}`
+    setMetadataSavingId(imageId)
+    toast.loading('Saving metadata sidecar...', { id: toastId })
+
+    try {
+      const response = await saveMetadataSidecar(imageId, payload)
+      const normalized: AssetMetadata = response.metadata
+      toast.success('Metadata saved to sidecar', { id: toastId })
+
+      setMetadataDrafts(prev => ({
+        ...prev,
+        [imageId]: {
+          title: normalized.title ?? payload.title,
+          description: normalized.description ?? payload.description,
+          alt_text: normalized.alt_text ?? payload.alt_text,
+          tags: (normalized.tags ?? payload.tags ?? []).join(', '),
+          source: normalized.source ?? 'sidecar',
+          asset_type: normalized.asset_type,
+        },
+      }))
+
+      setPreviews(prev =>
+        prev.map(preview =>
+          preview.image_id === imageId
+            ? {
+                ...preview,
+                metadata: {
+                  ...preview.metadata,
+                  title: normalized.title ?? payload.title,
+                  description: normalized.description ?? payload.description,
+                  alt_text: normalized.alt_text ?? payload.alt_text,
+                  tags: normalized.tags ?? payload.tags ?? [],
+                  source: normalized.source ?? 'sidecar',
+                },
+                sidecar_exists: true,
+              }
+            : preview
+        )
+      )
+
+      updateImage(imageId, {
+        ai_description: normalized.description ?? payload.description,
+        ai_tags: normalized.tags ?? payload.tags ?? [],
+        metadata_sidecar_exists: true,
+      })
+    } catch (error) {
+      console.error('Metadata save error:', error)
+      toast.error('Failed to save metadata sidecar', { id: toastId })
+    } finally {
+      setMetadataSavingId(null)
+    }
+  }
+
+  const handleDownloadMetadata = async (imageId: number) => {
+    const toastId = `metadata-download-${imageId}`
+    setMetadataDownloadingId(imageId)
+    toast.loading('Preparing metadata download...', { id: toastId })
+
+    try {
+      await downloadMetadataSidecar(imageId)
+      toast.success('Metadata sidecar download started', { id: toastId })
+    } catch (error) {
+      console.error('Metadata download error:', error)
+      toast.error('Failed to download metadata sidecar', { id: toastId })
+    } finally {
+      setMetadataDownloadingId(null)
     }
   }
 
@@ -375,8 +557,17 @@ export default function RenameManager() {
 
           <div className="divide-y max-h-[600px] overflow-y-auto">
             {previews.map((preview) => {
-              const image = images.find(img => img.id === preview.image_id)
               const isSelected = selectedImageIds.includes(preview.image_id)
+              const metadataDraft = metadataDrafts[preview.image_id] ?? {
+                title: preview.metadata?.title ?? '',
+                description: preview.metadata?.description ?? '',
+                alt_text: preview.metadata?.alt_text ?? '',
+                tags: (preview.metadata?.tags ?? []).join(', '),
+                source: preview.metadata?.source,
+                asset_type: preview.metadata?.asset_type,
+              }
+              const metadataSource = metadataDraft.source || preview.metadata?.source
+              const assetTypeLabel = metadataDraft.asset_type || preview.metadata?.asset_type
 
               return (
                 <div
@@ -412,11 +603,84 @@ export default function RenameManager() {
                         </span>
                       </div>
 
-                      {image?.ai_description && (
-                        <div className="mt-2 text-xs text-gray-600 line-clamp-1">
-                          {image.ai_description}
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-500 mb-1">AI Title</label>
+                          <input
+                            type="text"
+                            value={metadataDraft.title}
+                            onChange={(e) => handleMetadataChange(preview.image_id, 'title', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Concise descriptive title"
+                          />
                         </div>
-                      )}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-500 mb-1">Tags</label>
+                          <input
+                            type="text"
+                            value={metadataDraft.tags}
+                            onChange={(e) => handleMetadataChange(preview.image_id, 'tags', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="tag1, tag2, tag3"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-semibold text-gray-500 mb-1">Description</label>
+                          <textarea
+                            value={metadataDraft.description}
+                            onChange={(e) => handleMetadataChange(preview.image_id, 'description', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            rows={2}
+                            placeholder="Short catalog description"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-xs font-semibold text-gray-500 mb-1">Alt Text</label>
+                          <textarea
+                            value={metadataDraft.alt_text}
+                            onChange={(e) => handleMetadataChange(preview.image_id, 'alt_text', e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            rows={2}
+                            placeholder="Accessible summary for screen readers"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                        <span className="font-semibold uppercase tracking-wide">
+                          {formatMetadataSource(metadataSource)}
+                        </span>
+                        {assetTypeLabel && (
+                          <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                            {assetTypeLabel.toUpperCase()}
+                          </span>
+                        )}
+                        {preview.sidecar_exists && (
+                          <span className="px-2 py-1 rounded-full bg-green-100 text-green-700">
+                            Sidecar saved
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <Button
+                          variant="secondary"
+                          icon={<HardDriveDownload className="w-4 h-4" />}
+                          onClick={() => handlePersistMetadata(preview.image_id)}
+                          loading={metadataSavingId === preview.image_id}
+                        >
+                          Save Sidecar
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          icon={<Download className="w-4 h-4" />}
+                          onClick={() => handleDownloadMetadata(preview.image_id)}
+                          loading={metadataDownloadingId === preview.image_id}
+                          disabled={!preview.sidecar_exists && metadataSavingId !== preview.image_id}
+                        >
+                          Download
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>

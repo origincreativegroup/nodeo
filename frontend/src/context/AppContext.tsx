@@ -15,6 +15,7 @@ export interface ImageData {
   ai_scene?: string
   analyzed_at?: string
   created_at?: string
+  metadata_sidecar_exists?: boolean
 }
 
 export interface Settings {

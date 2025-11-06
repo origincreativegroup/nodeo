@@ -29,6 +29,36 @@ class LLaVAClient:
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode('utf-8')
 
+    async def prompt_with_image(
+        self,
+        image_path: str,
+        prompt: str,
+        *,
+        temperature: float = 0.3,
+        num_predict: int = 256,
+    ) -> str:
+        """Send a custom prompt alongside an image and return the raw response."""
+        try:
+            client = ollama.Client(host=self.host)
+            response = client.chat(
+                model=self.model,
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': prompt,
+                        'images': [image_path],
+                    }
+                ],
+                options={
+                    'temperature': temperature,
+                    'num_predict': num_predict,
+                },
+            )
+            return response['message']['content'].strip()
+        except Exception as exc:
+            logger.error(f"Error running custom prompt for {image_path}: {exc}")
+            raise
+
     async def analyze_image(
         self,
         image_path: str,
