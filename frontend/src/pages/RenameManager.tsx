@@ -57,6 +57,60 @@ export default function RenameManager() {
     }
   }
 
+  const handleAutoRename = async () => {
+    if (imagesToRename.length === 0) {
+      toast.error('No analyzed images to rename')
+      return
+    }
+
+    if (!confirm(`Auto-rename ${imagesToRename.length} images with AI-powered organization?\n\nThis will:\n- Use AI descriptions for filenames\n- Organize by year/month/scene/quality\n- Determine quality from file size and dimensions`)) {
+      return
+    }
+
+    setApplying(true)
+
+    try {
+      toast.loading(`Auto-renaming ${imagesToRename.length} images...`, { id: 'auto-rename' })
+
+      const response = await fetch('/api/rename/auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(imagesToRename)
+      })
+
+      const data = await response.json()
+
+      data.results.forEach((result: any) => {
+        if (result.success) {
+          updateImage(result.image_id, {
+            current_filename: result.new_filename,
+            filename: result.new_filename,
+          })
+        }
+      })
+
+      toast.success(`Successfully renamed ${data.succeeded} of ${data.total} images`, {
+        id: 'auto-rename',
+      })
+
+      if (data.results.some((r: any) => !r.success)) {
+        const errors = data.results.filter((r: any) => !r.success)
+        errors.forEach((err: any) => {
+          toast.error(`Failed to rename image ${err.image_id}: ${err.error}`)
+        })
+      }
+
+      if (selectedImageIds.length > 0) {
+        clearSelection()
+      }
+    } catch (error) {
+      console.error('Auto-rename error:', error)
+      toast.error('Error auto-renaming images', { id: 'auto-rename' })
+    } finally {
+      setApplying(false)
+    }
+  }
+
   const handleApplyRename = async () => {
     setApplying(true)
     setShowConfirmModal(false)
@@ -108,10 +162,28 @@ export default function RenameManager() {
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Rename Manager</h1>
-        <p className="text-gray-600 mt-1">
-          Batch rename images using AI analysis and custom templates
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Rename Manager</h1>
+            <p className="text-gray-600 mt-1">
+              Batch rename images using AI analysis and custom templates
+            </p>
+          </div>
+
+          {analyzedImages.length > 0 && (
+            <Button
+              variant="primary"
+              size="lg"
+              icon={<Sparkles className="w-5 h-5" />}
+              onClick={handleAutoRename}
+              disabled={applying || imagesToRename.length === 0}
+              loading={applying}
+              className="!bg-gradient-to-r !from-purple-600 !to-blue-600 hover:!from-purple-700 hover:!to-blue-700"
+            >
+              AI Auto-Rename {imagesToRename.length > 0 && `(${imagesToRename.length})`}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Template Input */}

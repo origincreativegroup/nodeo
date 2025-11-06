@@ -462,6 +462,126 @@ async def apply_rename(
     }
 
 
+@app.post("/api/rename/auto")
+async def auto_rename_images(
+    image_ids: List[int],
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Automatically rename images using AI with smart organization.
+    Uses AI description, file metadata (date, size), and organizes into folders.
+    """
+    from sqlalchemy import select
+    from datetime import datetime
+    import os
+
+    results = []
+    base_dir = Path(settings.upload_dir)
+
+    for image_id in image_ids:
+        result = await db.execute(select(Image).where(Image.id == image_id))
+        image = result.scalar_one_or_none()
+
+        if not image:
+            results.append({
+                "image_id": image_id,
+                "success": False,
+                "error": "Image not found"
+            })
+            continue
+
+        if not image.ai_description:
+            results.append({
+                "image_id": image_id,
+                "success": False,
+                "error": "Image not analyzed yet. Run AI analysis first."
+            })
+            continue
+
+        try:
+            # Get file metadata
+            file_path = Path(image.file_path)
+            file_stat = os.stat(file_path)
+            file_created = datetime.fromtimestamp(file_stat.st_ctime)
+
+            # Determine quality based on file size and dimensions
+            quality = "standard"
+            if image.file_size > 5_000_000:  # > 5MB
+                quality = "high"
+            elif image.file_size > 10_000_000:  # > 10MB
+                quality = "ultra"
+
+            if image.width and image.height:
+                total_pixels = image.width * image.height
+                if total_pixels > 8_000_000:  # > 8MP
+                    quality = "high" if quality == "standard" else "ultra"
+
+            # Generate smart filename from AI description
+            # Take first 5-7 words from description, clean them
+            desc_words = image.ai_description.lower().split()[:7]
+            desc_slug = '-'.join(w.strip(',.!?') for w in desc_words if w.strip(',.!?'))
+            desc_slug = desc_slug[:50]  # Limit length
+
+            # Add quality and date
+            date_str = file_created.strftime('%Y%m%d')
+            ext = file_path.suffix
+
+            # Create organized directory structure
+            year = file_created.strftime('%Y')
+            month = file_created.strftime('%m-%B')
+            scene_type = (image.ai_scene or 'general').lower().replace(' ', '-')
+
+            # Directory: uploads/YYYY/MM-Month/scene-type/quality/
+            target_dir = base_dir / year / month / scene_type / quality
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Filename: description-slug_YYYYMMDD_quality.ext
+            new_filename = f"{desc_slug}_{date_str}_{quality}{ext}"
+            new_path = target_dir / new_filename
+
+            # Handle duplicates
+            counter = 1
+            while new_path.exists():
+                new_filename = f"{desc_slug}_{date_str}_{quality}_{counter}{ext}"
+                new_path = target_dir / new_filename
+                counter += 1
+
+            # Move file
+            file_path.rename(new_path)
+
+            # Update database
+            image.current_filename = new_filename
+            image.file_path = str(new_path)
+            await db.commit()
+
+            # Get relative path for display
+            rel_path = new_path.relative_to(base_dir)
+
+            results.append({
+                "image_id": image_id,
+                "success": True,
+                "old_filename": file_path.name,
+                "new_filename": new_filename,
+                "directory": str(rel_path.parent),
+                "quality": quality,
+                "description_used": desc_slug
+            })
+
+        except Exception as e:
+            logger.error(f"Error auto-renaming image {image_id}: {e}")
+            results.append({
+                "image_id": image_id,
+                "success": False,
+                "error": str(e)
+            })
+
+    return {
+        "total": len(image_ids),
+        "succeeded": sum(1 for r in results if r.get("success")),
+        "results": results
+    }
+
+
 # Storage integration endpoints
 @app.post("/api/storage/nextcloud/upload")
 async def upload_to_nextcloud(
