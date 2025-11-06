@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { Settings } from '../context/AppContext'
+import { Settings, GroupType } from '../context/AppContext'
 
 const api = axios.create({
   baseURL: '/api',
@@ -117,6 +117,51 @@ export const applyRename = async (
     image_ids: imageIds,
     create_backups: createBackups,
   })
+  return response.data
+}
+
+export interface GroupingRecord {
+  id: number
+  name: string
+  description?: string | null
+  group_type: GroupType
+  metadata?: Record<string, unknown>
+  image_ids: number[]
+  is_user_defined?: boolean
+  created_by?: string | null
+  created_at?: string | null
+}
+
+export interface ManualGroupPayload {
+  name: string
+  description?: string
+  image_ids?: number[]
+}
+
+export const rebuildGroupings = async () => {
+  const response = await api.post<{ success: boolean; groups: GroupingRecord[] }>(
+    '/groupings/rebuild'
+  )
+  return response.data
+}
+
+export const createManualCollection = async (payload: ManualGroupPayload) => {
+  const response = await api.post<{ success: boolean; group: GroupingRecord }>(
+    '/groupings/manual',
+    payload
+  )
+  return response.data
+}
+
+export const assignImagesToGroup = async (
+  groupId: number,
+  imageIds: number[],
+  replace: boolean = false
+) => {
+  const response = await api.post<{ success: boolean; group: GroupingRecord }>(
+    `/groupings/${groupId}/assign`,
+    { image_ids: imageIds, replace }
+  )
   return response.data
 }
 
