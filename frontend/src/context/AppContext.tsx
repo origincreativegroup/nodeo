@@ -69,7 +69,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [images, setImages] = useState<ImageData[]>([])
   const [settings, setSettings] = useState<Settings>(defaultSettings)
   const [selectedImageIds, setSelectedImageIds] = useState<number[]>([])
-  const [loading, setLoading] = useState(true)
 
   // Load images on mount
   useEffect(() => {
@@ -82,8 +81,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error('Failed to load images:', error)
-      } finally {
-        setLoading(false)
       }
     }
     loadImages()
