@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,12 +18,20 @@ from app.models import (
 )
 from app.storage.layout import _slugify_segment
 
+if TYPE_CHECKING:
+    from app.storage.nextcloud_sync import NextcloudSyncService
+
 
 class ProjectService:
     """Service for managing portfolio projects and asset assignments"""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(
+        self,
+        db: AsyncSession,
+        sync_service: Optional["NextcloudSyncService"] = None,
+    ):
         self.db = db
+        self.sync_service = sync_service
 
     async def create_project(
         self,
@@ -223,6 +231,7 @@ class ProjectService:
                 image.project_id = None
 
         # Assign new images
+        newly_assigned_ids = []
         for image_id in image_ids:
             result = await self.db.execute(
                 select(Image).where(Image.id == image_id)
@@ -230,9 +239,24 @@ class ProjectService:
             image = result.scalar_one_or_none()
             if image:
                 image.project_id = project_id
+                newly_assigned_ids.append(image_id)
 
         await self.db.commit()
         await self.db.refresh(project)
+
+        # Trigger Nextcloud sync if available
+        if self.sync_service and newly_assigned_ids:
+            for image_id in newly_assigned_ids:
+                try:
+                    await self.sync_service.sync_image_on_assignment(
+                        image_id=image_id,
+                        project_id=project_id,
+                    )
+                except Exception as e:
+                    # Log but don't fail the assignment
+                    import logging
+                    logging.warning(f"Failed to sync image {image_id} to Nextcloud: {e}")
+
         return project
 
     async def remove_images_from_project(

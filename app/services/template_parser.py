@@ -28,6 +28,13 @@ class TemplateParser:
         {codec} - Video codec or image compression
         {format} - Container/format (e.g., mp4, jpeg)
         {media_type} - Media type (image or video)
+
+        Project-Aware Variables (Phase 4):
+        {project} - Project slug (e.g., acme-rebrand-2025)
+        {project_name} - Full project name
+        {client} - Client name from portfolio metadata
+        {project_type} - Project type (client, personal, commercial, etc.)
+        {project_number} - Sequential asset number within project (001, 002, ...)
     """
 
     VARIABLE_PATTERN = re.compile(r'\{([^}]+)\}')
@@ -93,6 +100,11 @@ class TemplateParser:
                 - original_filename (str)
                 - width (int)
                 - height (int)
+                - project (str) - project slug
+                - project_name (str) - full project name
+                - client (str) - client name
+                - project_type (str) - project type
+                - project_number (int) - sequential number within project
             index: Sequential index for batch operations
             current_time: Datetime to use (defaults to now)
 
@@ -105,6 +117,13 @@ class TemplateParser:
         # Prepare variable replacements
         width = metadata.get('width')
         height = metadata.get('height')
+
+        # Extract project metadata
+        project_slug = metadata.get('project', '')
+        project_name = metadata.get('project_name', '')
+        client = metadata.get('client', '')
+        project_type = metadata.get('project_type', '')
+        project_number = metadata.get('project_number', 1)
 
         replacements = {
             'description': self._get_description_slug(
@@ -129,6 +148,12 @@ class TemplateParser:
             'codec': self._sanitize(str(metadata.get('codec', ''))),
             'format': self._sanitize(str(metadata.get('format', ''))),
             'media_type': self._sanitize(str(metadata.get('media_type', ''))),
+            # Project-aware variables
+            'project': self._sanitize(project_slug),
+            'project_name': self._sanitize(project_name),
+            'client': self._sanitize(client),
+            'project_type': self._sanitize(project_type),
+            'project_number': str(project_number).zfill(3),
         }
 
         # Apply replacements
@@ -202,7 +227,9 @@ class TemplateParser:
             valid_vars = {
                 'description', 'tags', 'scene', 'date', 'time',
                 'datetime', 'index', 'original', 'width', 'height', 'resolution',
-                'duration_s', 'frame_rate', 'codec', 'format', 'media_type'
+                'duration_s', 'frame_rate', 'codec', 'format', 'media_type',
+                # Project-aware variables
+                'project', 'project_name', 'client', 'project_type', 'project_number'
             }
             unknown = set(variables) - valid_vars
             if unknown:
@@ -221,6 +248,12 @@ class TemplateParser:
                 'codec': 'h264',
                 'format': 'mp4',
                 'media_type': 'video',
+                # Project fields
+                'project': 'test-project',
+                'project_name': 'Test Project',
+                'client': 'Test Client',
+                'project_type': 'client',
+                'project_number': 1,
             }
             result = parser.apply(dummy_metadata)
 
@@ -235,6 +268,7 @@ class TemplateParser:
 
 # Predefined templates
 PREDEFINED_TEMPLATES = {
+    # Classic templates
     "descriptive": "{description}_{date}",
     "detailed": "{description}_{tags}_{datetime}",
     "simple": "{description}_{index}",
@@ -243,4 +277,14 @@ PREDEFINED_TEMPLATES = {
     "indexed": "{index}_{description}",
     "scene_based": "{scene}_{tags}_{date}",
     "original_preserved": "{original}_{description}_{date}",
+
+    # Portfolio-optimized templates (Phase 4)
+    "portfolio_client": "{client}_{project}_{description}_{project_number}",
+    "portfolio_seo": "{project_name}_{description}",
+    "portfolio_numbered": "{project}_{project_number}_{description}",
+    "portfolio_dated": "{project}_{date}_{description}_{project_number}",
+    "portfolio_detailed": "{client}_{project_type}_{description}_{date}",
+    "portfolio_simple": "{project}_{description}",
+    "portfolio_professional": "{client}_{project}_{tags}_{project_number}",
+    "portfolio_web": "{project_name}_{description}_{tags}",
 }

@@ -4,8 +4,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
+import time
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -47,14 +48,14 @@ from app.services import (
     AssetType,
 )
 from app.services.project_service import ProjectService
+from app.services.project_rename import ProjectRenameService
 from app.ai.project_classifier import ProjectClassifier
+from app.storage.nextcloud_sync import NextcloudSyncService
 from app.storage import nextcloud_client, r2_client, stream_client, storage_manager, metadata_sidecar_writer
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO if settings.debug else logging.WARNING,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure enhanced logging
+from app.debug_utils import setup_enhanced_logging, RequestLogger
+setup_enhanced_logging(log_level="DEBUG" if settings.debug else "INFO")
 logger = logging.getLogger(__name__)
 
 
@@ -131,6 +132,39 @@ app.add_middleware(
 )
 
 
+# Request/Response logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all HTTP requests and responses with timing"""
+    start_time = time.time()
+
+    # Process request
+    try:
+        response = await call_next(request)
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Log successful request
+        RequestLogger.log_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_ms=duration_ms
+        )
+
+        return response
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Log failed request
+        RequestLogger.log_error(
+            method=request.method,
+            path=request.url.path,
+            error=e
+        )
+
+        raise
+
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -140,6 +174,106 @@ async def health_check():
         "app": settings.app_name,
         "version": settings.app_version
     }
+
+
+# Debug and monitoring endpoints
+@app.get("/debug/system")
+async def debug_system_info(db: AsyncSession = Depends(get_db)):
+    """Get comprehensive system debug information"""
+    from app.debug_utils import DebugInfo
+
+    system_info = DebugInfo.get_system_info()
+    env_info = DebugInfo.get_environment_info()
+    storage_info = await DebugInfo.get_storage_info()
+    db_stats = await DebugInfo.get_database_stats(db)
+
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "system": system_info,
+        "environment": env_info,
+        "storage": storage_info,
+        "database": db_stats,
+    }
+
+
+@app.get("/debug/health-full")
+async def full_health_check(db: AsyncSession = Depends(get_db)):
+    """Comprehensive health check with all service connections"""
+    from app.debug_utils import DebugInfo
+
+    results = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "overall_status": "healthy",
+        "services": {}
+    }
+
+    # Check database
+    db_status = await DebugInfo.check_database_connection(db)
+    results["services"]["database"] = db_status
+    if db_status["status"] != "connected":
+        results["overall_status"] = "degraded"
+
+    # Check Ollama
+    ollama_status = await DebugInfo.check_ollama_connection()
+    results["services"]["ollama"] = ollama_status
+    if ollama_status["status"] != "connected":
+        results["overall_status"] = "degraded"
+
+    # Check Nextcloud
+    nextcloud_status = await DebugInfo.check_nextcloud_connection()
+    results["services"]["nextcloud"] = nextcloud_status
+    if nextcloud_status["status"] != "connected":
+        results["overall_status"] = "degraded"
+
+    # Get database stats
+    db_stats = await DebugInfo.get_database_stats(db)
+    results["database_stats"] = db_stats
+
+    return results
+
+
+@app.get("/debug/logs/recent")
+async def get_recent_logs(lines: int = 50):
+    """Get recent log entries"""
+    try:
+        log_file = Path("logs/jspow.log")
+        if not log_file.exists():
+            return {"error": "Log file not found", "logs": []}
+
+        with open(log_file, "r") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:]
+
+        return {
+            "total_lines": len(all_lines),
+            "showing": len(recent_lines),
+            "logs": [line.strip() for line in recent_lines]
+        }
+    except Exception as e:
+        logger.error(f"Error reading logs: {e}")
+        return {"error": str(e), "logs": []}
+
+
+@app.get("/debug/errors/recent")
+async def get_recent_errors(lines: int = 50):
+    """Get recent error log entries"""
+    try:
+        error_log = Path("logs/errors.log")
+        if not error_log.exists():
+            return {"error": "Error log file not found", "errors": []}
+
+        with open(error_log, "r") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:]
+
+        return {
+            "total_errors": len(all_lines),
+            "showing": len(recent_lines),
+            "errors": [line.strip() for line in recent_lines]
+        }
+    except Exception as e:
+        logger.error(f"Error reading error log: {e}")
+        return {"error": str(e), "errors": []}
 
 
 # Image upload and analysis endpoints
@@ -1080,6 +1214,107 @@ async def auto_rename_images(
     }
 
 
+# Project-Aware Rename endpoints (Phase 4)
+@app.get("/api/projects/{project_id}/rename/suggestions")
+async def get_project_rename_suggestions(
+    project_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get portfolio-optimized template suggestions for a project"""
+    try:
+        rename_service = ProjectRenameService(db)
+        suggestions = await rename_service.get_portfolio_suggestions(project_id)
+        return suggestions
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting rename suggestions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/projects/{project_id}/rename/preview")
+async def preview_project_rename(
+    project_id: int,
+    template: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Preview project-aware rename for all assets in project"""
+    try:
+        rename_service = ProjectRenameService(db)
+        previews = await rename_service.preview_project_rename(
+            project_id=project_id,
+            template=template,
+        )
+
+        return {
+            "project_id": project_id,
+            "template": template,
+            "total_assets": len(previews),
+            "previews": [
+                {
+                    "image_id": p.image_id,
+                    "original_filename": p.original_filename,
+                    "proposed_filename": p.proposed_filename,
+                    "project_number": p.project_number,
+                }
+                for p in previews
+            ],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error previewing rename: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/projects/{project_id}/rename/apply")
+async def apply_project_rename(
+    project_id: int,
+    template: str,
+    create_backups: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """Apply project-aware rename to all assets in project"""
+    try:
+        rename_service = ProjectRenameService(db)
+        result = await rename_service.apply_project_rename(
+            project_id=project_id,
+            template=template,
+            create_backups=create_backups,
+        )
+
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error applying rename: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/images/{image_id}/rename/project-aware")
+async def rename_image_with_project(
+    image_id: int,
+    template: Optional[str] = None,
+    create_backup: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """Rename a single image using project context"""
+    try:
+        rename_service = ProjectRenameService(db)
+        result = await rename_service.rename_single_with_project(
+            image_id=image_id,
+            template=template,
+            create_backup=create_backup,
+        )
+
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error renaming image: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Storage integration endpoints
 @app.post("/api/storage/nextcloud/upload")
 async def upload_to_nextcloud(
@@ -1451,9 +1686,13 @@ async def assign_assets_to_project(
     request: ProjectAssignImagesRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Assign assets to a project"""
+    """Assign assets to a project (with automatic Nextcloud sync)"""
     try:
-        project_service = ProjectService(db)
+        # Create sync service
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+
+        # Create project service with sync
+        project_service = ProjectService(db, sync_service=sync_service)
         project = await project_service.assign_images_to_project(
             project_id,
             request.image_ids,
@@ -1465,6 +1704,7 @@ async def assign_assets_to_project(
             "project_id": project.id,
             "project_name": project.name,
             "assigned_count": len(project.images),
+            "auto_sync_enabled": settings.nextcloud_auto_sync,
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1704,6 +1944,145 @@ async def learn_from_assignment(
         return {"success": True, "message": "Learning complete"}
     except Exception as e:
         logger.error(f"Error learning from assignment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Nextcloud Sync endpoints
+@app.post("/api/nextcloud/sync/project/{project_id}")
+async def sync_project_to_nextcloud(
+    project_id: int,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Sync all assets in a project to Nextcloud
+
+    Args:
+        project_id: Project ID
+        force: Force re-sync of already synced assets
+    """
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        result = await sync_service.sync_project(project_id, force=force)
+
+        return {
+            "success": True,
+            "project_id": result.project_id,
+            "project_name": result.project_name,
+            "total_assets": result.total_assets,
+            "synced": result.synced,
+            "failed": result.failed,
+            "skipped": result.skipped,
+            "results": [
+                {
+                    "image_id": r.image_id,
+                    "success": r.success,
+                    "nextcloud_path": r.nextcloud_path,
+                    "error": r.error,
+                }
+                for r in result.results
+            ],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error syncing project {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/nextcloud/sync/batch")
+async def sync_batch_to_nextcloud(
+    image_ids: List[int],
+    force: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Sync multiple assets to Nextcloud
+
+    Args:
+        image_ids: List of image IDs to sync
+        force: Force re-sync of already synced assets
+    """
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        results = await sync_service.sync_batch(image_ids, force=force)
+
+        succeeded = sum(1 for r in results if r.success)
+        failed = sum(1 for r in results if not r.success)
+
+        return {
+            "success": True,
+            "total": len(image_ids),
+            "synced": succeeded,
+            "failed": failed,
+            "results": [
+                {
+                    "image_id": r.image_id,
+                    "success": r.success,
+                    "nextcloud_path": r.nextcloud_path,
+                    "error": r.error,
+                }
+                for r in results
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error syncing batch: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/nextcloud/sync/status/{project_id}")
+async def get_sync_status(
+    project_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get Nextcloud sync status for a project"""
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        status = await sync_service.get_sync_status(project_id)
+        return status
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting sync status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/nextcloud/validate")
+async def validate_nextcloud_connection(db: AsyncSession = Depends(get_db)):
+    """Test Nextcloud connection"""
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        result = await sync_service.validate_nextcloud_connection()
+        return result
+    except Exception as e:
+        logger.error(f"Error validating Nextcloud connection: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/nextcloud/import/{project_id}")
+async def import_from_nextcloud(
+    project_id: int,
+    remote_folder: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Import files from Nextcloud into a project
+
+    Args:
+        project_id: Project to import into
+        remote_folder: Remote folder to import from (uses project folder if None)
+    """
+    try:
+        sync_service = NextcloudSyncService(db, nextcloud_client)
+        result = await sync_service.import_from_nextcloud(
+            project_id=project_id,
+            remote_folder=remote_folder,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error importing from Nextcloud: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
