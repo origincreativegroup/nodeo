@@ -47,6 +47,7 @@ from app.services import (
     AssetType,
 )
 from app.services.project_service import ProjectService
+from app.ai.project_classifier import ProjectClassifier
 from app.storage import nextcloud_client, r2_client, stream_client, storage_manager, metadata_sidecar_writer
 
 # Configure logging
@@ -336,11 +337,39 @@ async def analyze_image(
         await db.commit()
         await db.refresh(image)
 
+        # Run AI grouping
         try:
             grouping_service = GroupingService(db)
             await grouping_service.rebuild_ai_groups()
         except Exception as exc:
             logger.warning("Failed to rebuild AI groupings: %s", exc)
+
+        # Run project classification
+        project_classification = None
+        try:
+            classifier = ProjectClassifier(db, llava_client)
+            classification_result = await classifier.classify_image(
+                image=image,
+                auto_assign=True,
+            )
+            project_classification = {
+                "assigned_project_id": classification_result.assigned_project_id,
+                "assigned_project_name": classification_result.assigned_project_name,
+                "confidence": classification_result.confidence,
+                "requires_review": classification_result.requires_review,
+                "reasons": classification_result.reasons,
+                "top_matches": [
+                    {
+                        "project_id": match.project_id,
+                        "project_name": match.project_name,
+                        "confidence": match.confidence,
+                        "reasons": match.reasons,
+                    }
+                    for match in classification_result.all_matches[:3]
+                ],
+            }
+        except Exception as exc:
+            logger.warning("Failed to classify project: %s", exc)
 
         return {
             "success": True,
@@ -350,7 +379,8 @@ async def analyze_image(
                 "tags": image.ai_tags,
                 "objects": image.ai_objects,
                 "scene": image.ai_scene
-            }
+            },
+            "project_classification": project_classification,
         }
 
     except Exception as e:
@@ -416,10 +446,32 @@ async def batch_analyze_images(
     except Exception as exc:
         logger.warning("Failed to rebuild AI groupings after batch: %s", exc)
 
+    # Run batch project classification
+    project_classifications = []
+    try:
+        classifier = ProjectClassifier(db, llava_client)
+        classification_results = await classifier.classify_batch(
+            image_ids=[r["image_id"] for r in results if r["success"]],
+            auto_assign=True,
+        )
+        project_classifications = [
+            {
+                "image_id": cr.image_id,
+                "assigned_project_id": cr.assigned_project_id,
+                "assigned_project_name": cr.assigned_project_name,
+                "confidence": cr.confidence,
+                "requires_review": cr.requires_review,
+            }
+            for cr in classification_results
+        ]
+    except Exception as exc:
+        logger.warning("Failed to classify projects after batch: %s", exc)
+
     return {
         "total": len(image_ids),
         "succeeded": sum(1 for r in results if r.get("success")),
-        "results": results
+        "results": results,
+        "project_classifications": project_classifications,
     }
 
 
@@ -1477,6 +1529,182 @@ async def get_project_stats(
         return stats
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# AI Project Classification endpoints
+@app.post("/api/projects/classify/{image_id}")
+async def classify_image_project(
+    image_id: int,
+    auto_assign: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Classify an image and suggest/assign project
+
+    Args:
+        image_id: Image ID to classify
+        auto_assign: Whether to automatically assign to best matching project
+    """
+    try:
+        # Get image
+        result = await db.execute(select(Image).where(Image.id == image_id))
+        image = result.scalar_one_or_none()
+
+        if not image:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        # Run classification
+        classifier = ProjectClassifier(db, llava_client)
+        classification = await classifier.classify_image(
+            image=image,
+            auto_assign=auto_assign,
+        )
+
+        return {
+            "image_id": classification.image_id,
+            "assigned_project_id": classification.assigned_project_id,
+            "assigned_project_name": classification.assigned_project_name,
+            "confidence": classification.confidence,
+            "requires_review": classification.requires_review,
+            "reasons": classification.reasons,
+            "all_matches": [
+                {
+                    "project_id": match.project_id,
+                    "project_name": match.project_name,
+                    "confidence": match.confidence,
+                    "reasons": match.reasons,
+                    "keyword_matches": match.keyword_matches,
+                    "theme_matches": match.theme_matches,
+                }
+                for match in classification.all_matches
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error classifying image {image_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/projects/classify-batch")
+async def classify_batch_projects(
+    image_ids: List[int],
+    auto_assign: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Classify multiple images in batch
+
+    Args:
+        image_ids: List of image IDs to classify
+        auto_assign: Whether to automatically assign to projects
+    """
+    try:
+        classifier = ProjectClassifier(db, llava_client)
+        classifications = await classifier.classify_batch(
+            image_ids=image_ids,
+            auto_assign=auto_assign,
+        )
+
+        return {
+            "total": len(image_ids),
+            "classifications": [
+                {
+                    "image_id": c.image_id,
+                    "assigned_project_id": c.assigned_project_id,
+                    "assigned_project_name": c.assigned_project_name,
+                    "confidence": c.confidence,
+                    "requires_review": c.requires_review,
+                    "reasons": c.reasons,
+                }
+                for c in classifications
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error classifying batch: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/projects/suggestions/{image_id}")
+async def get_project_suggestions(
+    image_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get project suggestions for an image without assigning"""
+    try:
+        classifier = ProjectClassifier(db, llava_client)
+        suggestions = await classifier.suggest_project(image_id)
+
+        return {
+            "image_id": image_id,
+            "suggestions": [
+                {
+                    "project_id": match.project_id,
+                    "project_name": match.project_name,
+                    "project_slug": match.project_slug,
+                    "confidence": match.confidence,
+                    "reasons": match.reasons,
+                    "keyword_matches": match.keyword_matches,
+                    "theme_matches": match.theme_matches,
+                }
+                for match in suggestions
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting suggestions for image {image_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/projects/review-queue")
+async def get_review_queue(db: AsyncSession = Depends(get_db)):
+    """Get images that need manual project assignment review"""
+    try:
+        classifier = ProjectClassifier(db, llava_client)
+        images = await classifier.get_review_queue()
+
+        return {
+            "count": len(images),
+            "images": [
+                {
+                    "id": img.id,
+                    "current_filename": img.current_filename,
+                    "file_path": img.file_path,
+                    "media_type": img.media_type.value,
+                    "ai_description": img.ai_description,
+                    "ai_tags": img.ai_tags,
+                    "ai_scene": img.ai_scene,
+                    "created_at": img.created_at.isoformat() if img.created_at else None,
+                }
+                for img in images
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Error getting review queue: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ProjectLearningRequest(BaseModel):
+    image_id: int
+    project_id: int
+    is_correct: bool = True
+
+
+@app.post("/api/projects/learn")
+async def learn_from_assignment(
+    request: ProjectLearningRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Learn from manual project assignments to improve AI"""
+    try:
+        classifier = ProjectClassifier(db, llava_client)
+        await classifier.learn_from_assignment(
+            image_id=request.image_id,
+            project_id=request.project_id,
+            is_correct=request.is_correct,
+        )
+
+        return {"success": True, "message": "Learning complete"}
+    except Exception as e:
+        logger.error(f"Error learning from assignment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Serve frontend static files
