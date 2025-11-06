@@ -2086,10 +2086,22 @@ async def import_from_nextcloud(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Serve frontend static files
+# Serve frontend static files and handle SPA routing
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+    # Mount static files for /assets and other static resources
+    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+
+    # Catch-all route for SPA - must be last
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve index.html for all non-API routes to support SPA routing"""
+        # Serve static files if they exist
+        file_path = static_dir / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        # Otherwise serve index.html for React Router
+        return FileResponse(static_dir / "index.html")
 
 
 if __name__ == "__main__":

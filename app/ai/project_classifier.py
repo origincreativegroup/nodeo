@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.ai.llava_client import LLaVaClient
+from app.ai.llava_client import LLaVAClient
 from app.models import Image, Project, ProjectType
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class ProjectClassifier:
     def __init__(
         self,
         db: AsyncSession,
-        llava_client: Optional[LLaVaClient] = None,
+        llava_client: Optional[LLaVAClient] = None,
         confidence_threshold: float = 0.70,
         review_threshold: float = 0.50,
     ):
@@ -62,7 +62,7 @@ class ProjectClassifier:
             review_threshold: Minimum confidence for manual review (default 0.50)
         """
         self.db = db
-        self.llava_client = llava_client or LLaVaClient()
+        self.llava_client = llava_client or LLaVAClient()
         self.confidence_threshold = confidence_threshold
         self.review_threshold = review_threshold
 

@@ -110,7 +110,7 @@ export default function StorageManager() {
         <div className="mb-6 flex items-center justify-between bg-white p-4 rounded-lg shadow">
           <div className="flex items-center gap-4">
             <button
-              onClick={allSelected ? clearSelection : selectAll}
+              onClick={() => allSelected ? clearSelection() : selectAll()}
               className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
             >
               {allSelected ? (

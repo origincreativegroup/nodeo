@@ -216,7 +216,7 @@ export default function ImageGallery() {
       {images.length > 0 && (
         <div className="mb-6 flex items-center gap-4 bg-white p-4 rounded-lg shadow">
           <button
-            onClick={allSelected ? clearSelection : selectAll}
+            onClick={() => allSelected ? clearSelection() : selectAll()}
             className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
           >
             {allSelected ? (

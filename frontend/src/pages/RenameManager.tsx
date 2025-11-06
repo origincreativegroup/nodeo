@@ -820,97 +820,6 @@ export default function RenameManager() {
             </div>
           )}
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Naming Template
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Template Pattern
-                </label>
-                <input
-                  type="text"
-                  value={template}
-                  onChange={(e) => setTemplate(e.target.value)}
-                  placeholder="{description}_{date}_{index}"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">
-                  Quick Insert Variables:
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {['{description}', '{tags}', '{scene}', '{date}', '{time}', '{index}', '_', '-'].map(
-                    (variable) => (
-                      <button
-                        key={variable}
-                        onClick={() => insertVariable(variable)}
-                        className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
-                      >
-                        {variable}
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-blue-900 mb-2">
-                  Available Variables:
-                </p>
-                <ul className="text-sm text-blue-800 space-y-1">
-                  <li>
-                    <code className="bg-blue-100 px-2 py-0.5 rounded">
-                      {'{description}'}
-                    </code>{' '}
-                    - AI-generated description (slug format)
-                  </li>
-                  <li>
-                    <code className="bg-blue-100 px-2 py-0.5 rounded">
-                      {'{tags}'}
-                    </code>{' '}
-                    - Top AI tags (slug format)
-                  </li>
-                  <li>
-                    <code className="bg-blue-100 px-2 py-0.5 rounded">
-                      {'{scene}'}
-                    </code>{' '}
-                    - Scene type detected by AI
-                  </li>
-                  <li>
-                    <code className="bg-blue-100 px-2 py-0.5 rounded">
-                      {'{date}'}
-                    </code>{' '}
-                    - Current date (YYYYMMDD)
-                  </li>
-                  <li>
-                    <code className="bg-blue-100 px-2 py-0.5 rounded">
-                      {'{time}'}
-                    </code>{' '}
-                    - Current time (HHMMSS)
-                  </li>
-                  <li>
-                    <code className="bg-blue-100 px-2 py-0.5 rounded">
-                      {'{index}'}
-                    </code>{' '}
-                    - Sequential number (001, 002, ...)
-                  </li>
-                  <li>
-                    <code className="bg-blue-100 px-2 py-0.5 rounded">
-                      {'{original}'}
-                    </code>{' '}
-                    - Original filename (without extension)
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
           {analyzedImages.length > 0 && (
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white p-4 rounded-lg shadow">
               <div className="flex items-center gap-4">
@@ -1144,7 +1053,7 @@ export default function RenameManager() {
         <div className="mb-6 flex items-center justify-between bg-white p-4 rounded-lg shadow">
           <div className="flex items-center gap-4">
             <button
-              onClick={allSelected ? clearSelection : selectAll}
+              onClick={() => allSelected ? clearSelection() : selectAll()}
               className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
             >
               {allSelected ? (
