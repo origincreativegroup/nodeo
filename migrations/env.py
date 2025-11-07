@@ -29,6 +29,7 @@ from app.models import (
     UploadBatch,
     ImageGroup,
     ImageGroupAssociation,
+    NextcloudSettings,
 )
 
 # This is the Alembic Config object

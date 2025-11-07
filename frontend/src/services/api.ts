@@ -282,4 +282,55 @@ export const uploadToR2 = async (imageId: number, key: string) => {
   return response.data
 }
 
+// Nextcloud Settings Management
+export interface NextcloudSettings {
+  configured: boolean
+  server_url?: string
+  username?: string
+  base_path?: string
+  auto_sync_enabled?: boolean
+  sync_on_upload?: boolean
+  sync_on_rename?: boolean
+  sync_strategy?: string
+  is_connected?: boolean
+  last_connection_test?: string
+  connection_error?: string
+  total_synced?: number
+  last_sync_at?: string
+}
+
+export interface NextcloudSettingsRequest {
+  server_url: string
+  username: string
+  password: string
+  base_path?: string
+  auto_sync_enabled?: boolean
+  sync_on_upload?: boolean
+  sync_on_rename?: boolean
+  sync_strategy?: string
+}
+
+export const getNextcloudSettings = async (): Promise<NextcloudSettings> => {
+  const response = await api.get('/nextcloud/settings')
+  return response.data
+}
+
+export const saveNextcloudSettings = async (settings: NextcloudSettingsRequest) => {
+  const response = await api.post('/nextcloud/settings', settings)
+  return response.data
+}
+
+export const testNextcloudConnection = async () => {
+  const response = await api.post('/nextcloud/settings/test')
+  return response.data
+}
+
+export const exportToNextcloud = async (imageIds: number[], remoteFolder?: string) => {
+  const response = await api.post('/nextcloud/export', {
+    image_ids: imageIds,
+    remote_folder: remoteFolder,
+  })
+  return response.data
+}
+
 export default api

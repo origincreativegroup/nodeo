@@ -27,6 +27,7 @@ from app.models import (
     ImageGroup,
     ImageGroupAssociation,
     MediaType,
+    NextcloudSettings,
     ProcessStatus,
     ProcessingQueue,
     Project,
@@ -1119,6 +1120,22 @@ class R2UploadRequest(BaseModel):
     key: str
 
 
+class NextcloudSettingsRequest(BaseModel):
+    server_url: str = Field(..., description="Nextcloud server URL")
+    username: str = Field(..., description="Nextcloud username")
+    password: str = Field(..., description="Nextcloud password")
+    base_path: str = Field(default="/jspow", description="Base path in Nextcloud")
+    auto_sync_enabled: bool = Field(default=True, description="Enable automatic sync")
+    sync_on_upload: bool = Field(default=False, description="Sync on upload")
+    sync_on_rename: bool = Field(default=True, description="Sync on file rename")
+    sync_strategy: str = Field(default="mirror", description="Sync strategy: mirror|backup|primary")
+
+
+class NextcloudExportRequest(BaseModel):
+    image_ids: List[int] = Field(..., description="Image IDs to export")
+    remote_folder: Optional[str] = Field(None, description="Remote folder path")
+
+
 # Rename preview and execution endpoints
 @app.post("/api/rename/preview")
 async def preview_rename(
@@ -1211,7 +1228,7 @@ async def apply_rename(
     results = []
 
     for idx, image_id in enumerate(request.image_ids, start=1):
-        result = await db.execute(select(Image).where(Image.id == image_id))
+        result = await db.execute(select(Image).options(selectinload(Image.project)).where(Image.id == image_id))
         image = result.scalar_one_or_none()
 
         if not image:
@@ -1252,6 +1269,29 @@ async def apply_rename(
                 image.current_filename = new_filename
                 image.file_path = rename_result['new_path']
                 await db.commit()
+
+                # Auto-sync to Nextcloud if enabled
+                nc_result = await db.execute(select(NextcloudSettings))
+                nc_settings = nc_result.scalar_one_or_none()
+
+                if nc_settings and nc_settings.sync_on_rename and nc_settings.is_connected:
+                    try:
+                        from app.storage.nextcloud import NextcloudClient
+                        nc_client = NextcloudClient(
+                            url=nc_settings.server_url,
+                            username=nc_settings.username,
+                            password=nc_settings.password,
+                            base_path=nc_settings.base_path
+                        )
+                        sync_service = NextcloudSyncService(db, nc_client, auto_sync=True)
+
+                        # Sync renamed file in background
+                        if image.project_id:
+                            await sync_service.sync_image_to_project(image, image.project, force=True)
+                            logger.info(f"Auto-synced renamed file {new_filename} to Nextcloud")
+                    except Exception as sync_error:
+                        logger.warning(f"Failed to auto-sync renamed file: {sync_error}")
+                        # Don't fail the rename operation if sync fails
 
                 results.append({
                     "image_id": image_id,
@@ -2473,6 +2513,213 @@ async def import_from_nextcloud(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error importing from Nextcloud: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Nextcloud Settings Management
+@app.get("/api/nextcloud/settings")
+async def get_nextcloud_settings(db: AsyncSession = Depends(get_db)):
+    """Get current Nextcloud settings (returns connection info without password)"""
+    try:
+        result = await db.execute(select(NextcloudSettings))
+        settings_record = result.scalar_one_or_none()
+
+        if not settings_record:
+            return {
+                "configured": False,
+                "message": "Nextcloud not configured"
+            }
+
+        return {
+            "configured": True,
+            "server_url": settings_record.server_url,
+            "username": settings_record.username,
+            "base_path": settings_record.base_path,
+            "auto_sync_enabled": settings_record.auto_sync_enabled,
+            "sync_on_upload": settings_record.sync_on_upload,
+            "sync_on_rename": settings_record.sync_on_rename,
+            "sync_strategy": settings_record.sync_strategy,
+            "is_connected": settings_record.is_connected,
+            "last_connection_test": settings_record.last_connection_test.isoformat() if settings_record.last_connection_test else None,
+            "connection_error": settings_record.connection_error,
+            "total_synced": settings_record.total_synced,
+            "last_sync_at": settings_record.last_sync_at.isoformat() if settings_record.last_sync_at else None,
+        }
+    except Exception as e:
+        logger.error(f"Error getting Nextcloud settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/nextcloud/settings")
+async def save_nextcloud_settings(
+    request: NextcloudSettingsRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Save or update Nextcloud settings"""
+    try:
+        # Check if settings already exist (singleton pattern)
+        result = await db.execute(select(NextcloudSettings))
+        settings_record = result.scalar_one_or_none()
+
+        if settings_record:
+            # Update existing settings
+            settings_record.server_url = request.server_url
+            settings_record.username = request.username
+            settings_record.password = request.password  # TODO: Encrypt in production
+            settings_record.base_path = request.base_path
+            settings_record.auto_sync_enabled = request.auto_sync_enabled
+            settings_record.sync_on_upload = request.sync_on_upload
+            settings_record.sync_on_rename = request.sync_on_rename
+            settings_record.sync_strategy = request.sync_strategy
+            settings_record.updated_at = datetime.utcnow()
+        else:
+            # Create new settings
+            settings_record = NextcloudSettings(
+                server_url=request.server_url,
+                username=request.username,
+                password=request.password,  # TODO: Encrypt in production
+                base_path=request.base_path,
+                auto_sync_enabled=request.auto_sync_enabled,
+                sync_on_upload=request.sync_on_upload,
+                sync_on_rename=request.sync_on_rename,
+                sync_strategy=request.sync_strategy,
+            )
+            db.add(settings_record)
+
+        await db.commit()
+        await db.refresh(settings_record)
+
+        return {
+            "success": True,
+            "message": "Nextcloud settings saved successfully",
+            "id": settings_record.id
+        }
+    except Exception as e:
+        logger.error(f"Error saving Nextcloud settings: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/nextcloud/settings/test")
+async def test_nextcloud_connection(db: AsyncSession = Depends(get_db)):
+    """Test Nextcloud connection with current settings"""
+    try:
+        # Get settings from database
+        result = await db.execute(select(NextcloudSettings))
+        settings_record = result.scalar_one_or_none()
+
+        if not settings_record:
+            raise HTTPException(status_code=404, detail="Nextcloud settings not configured")
+
+        # Create temporary client with database settings
+        from app.storage.nextcloud import NextcloudClient
+        test_client = NextcloudClient(
+            url=settings_record.server_url,
+            username=settings_record.username,
+            password=settings_record.password,
+            base_path=settings_record.base_path
+        )
+
+        # Test connection
+        try:
+            files = await test_client.list_files(directory="")
+
+            # Update connection status
+            settings_record.is_connected = True
+            settings_record.last_connection_test = datetime.utcnow()
+            settings_record.connection_error = None
+            await db.commit()
+
+            return {
+                "success": True,
+                "connected": True,
+                "message": "Successfully connected to Nextcloud",
+                "server_url": settings_record.server_url,
+                "username": settings_record.username,
+                "base_path": settings_record.base_path,
+                "files_in_root": len(files)
+            }
+        except Exception as conn_error:
+            # Update connection status with error
+            settings_record.is_connected = False
+            settings_record.last_connection_test = datetime.utcnow()
+            settings_record.connection_error = str(conn_error)
+            await db.commit()
+
+            return {
+                "success": False,
+                "connected": False,
+                "message": "Failed to connect to Nextcloud",
+                "error": str(conn_error)
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error testing Nextcloud connection: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/nextcloud/export")
+async def export_to_nextcloud(
+    request: NextcloudExportRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """Export/sync images to Nextcloud manually (single or batch)"""
+    try:
+        # Get settings from database
+        result = await db.execute(select(NextcloudSettings))
+        settings_record = result.scalar_one_or_none()
+
+        if not settings_record:
+            raise HTTPException(status_code=404, detail="Nextcloud settings not configured")
+
+        if not settings_record.is_connected:
+            raise HTTPException(status_code=400, detail="Nextcloud not connected. Please test connection first.")
+
+        # Create client with database settings
+        from app.storage.nextcloud import NextcloudClient
+        nc_client = NextcloudClient(
+            url=settings_record.server_url,
+            username=settings_record.username,
+            password=settings_record.password,
+            base_path=settings_record.base_path
+        )
+
+        sync_service = NextcloudSyncService(db, nc_client, auto_sync=True)
+
+        # Sync images
+        results = await sync_service.sync_batch(
+            image_ids=request.image_ids,
+            force=True  # Force re-sync
+        )
+
+        # Update stats
+        successful_syncs = sum(1 for r in results if r.success)
+        settings_record.total_synced += successful_syncs
+        settings_record.last_sync_at = datetime.utcnow()
+        await db.commit()
+
+        return {
+            "success": True,
+            "total": len(request.image_ids),
+            "succeeded": successful_syncs,
+            "failed": len(request.image_ids) - successful_syncs,
+            "results": [
+                {
+                    "image_id": r.image_id,
+                    "success": r.success,
+                    "nextcloud_path": r.nextcloud_path,
+                    "error": r.error,
+                    "bytes_transferred": r.bytes_transferred
+                }
+                for r in results
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting to Nextcloud: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
