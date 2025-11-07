@@ -529,52 +529,107 @@ async def batch_analyze_images(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Batch analyze multiple images
+    Batch analyze multiple images using concurrent processing for improved performance
     """
     from sqlalchemy import select
     from datetime import datetime
 
+    # Bulk load all images at once (single query instead of N queries)
+    result = await db.execute(select(Image).where(Image.id.in_(image_ids)))
+    images = result.scalars().all()
+
+    # Create lookup maps
+    image_by_id = {img.id: img for img in images}
+    image_by_path = {img.file_path: img for img in images}
+
+    # Track missing images
     results = []
+    found_image_ids = set(image_by_id.keys())
+    missing_image_ids = set(image_ids) - found_image_ids
 
-    for image_id in image_ids:
-        try:
-            result = await db.execute(select(Image).where(Image.id == image_id))
-            image = result.scalar_one_or_none()
+    for image_id in missing_image_ids:
+        results.append({
+            "image_id": image_id,
+            "success": False,
+            "error": "Image not found"
+        })
 
-            if not image:
+    # Get paths for concurrent analysis
+    image_paths = [img.file_path for img in images]
+
+    if not image_paths:
+        return {
+            "total": len(image_ids),
+            "succeeded": 0,
+            "results": results,
+            "project_classifications": [],
+        }
+
+    # Use concurrent batch analysis (5x faster!)
+    try:
+        analysis_results = await llava_client.batch_analyze(
+            image_paths=image_paths,
+            extract_full_metadata=True,
+            concurrent=True,
+            max_concurrent=5  # Process 5 images simultaneously
+        )
+
+        # Batch update all images (single transaction)
+        now = datetime.utcnow()
+        successful_image_ids = []
+
+        for analysis in analysis_results:
+            image_path = analysis.get('image_path')
+
+            if 'error' in analysis:
+                # Find image ID from path
+                image = image_by_path.get(image_path)
                 results.append({
-                    "image_id": image_id,
+                    "image_id": image.id if image else None,
                     "success": False,
-                    "error": "Image not found"
+                    "error": analysis['error']
                 })
                 continue
 
-            # Analyze
-            metadata = await llava_client.extract_metadata(image.file_path)
+            # Update image metadata
+            image = image_by_path.get(image_path)
+            if image:
+                image.ai_description = analysis.get('description', '')
+                image.ai_tags = analysis.get('tags', [])
+                image.ai_objects = analysis.get('objects', [])
+                image.ai_scene = analysis.get('scene', '')
+                image.analyzed_at = now
 
-            # Update
-            image.ai_description = metadata['description']
-            image.ai_tags = metadata['tags']
-            image.ai_objects = metadata['objects']
-            image.ai_scene = metadata['scene']
-            image.analyzed_at = datetime.utcnow()
+                successful_image_ids.append(image.id)
 
-            await db.commit()
+                results.append({
+                    "image_id": image.id,
+                    "success": True,
+                    "analysis": {
+                        "description": analysis.get('description', ''),
+                        "tags": analysis.get('tags', []),
+                        "objects": analysis.get('objects', []),
+                        "scene": analysis.get('scene', '')
+                    }
+                })
 
-            results.append({
-                "image_id": image_id,
-                "success": True,
-                "analysis": metadata
-            })
+        # Single commit for all updates (instead of N commits)
+        await db.commit()
 
-        except Exception as e:
-            logger.error(f"Error analyzing image {image_id}: {e}")
-            results.append({
-                "image_id": image_id,
-                "success": False,
-                "error": str(e)
-            })
+    except Exception as e:
+        logger.error(f"Error during batch analysis: {e}")
+        await db.rollback()
+        # Mark all remaining as failed
+        for img in images:
+            if img.id not in [r.get("image_id") for r in results]:
+                results.append({
+                    "image_id": img.id,
+                    "success": False,
+                    "error": str(e)
+                })
+        successful_image_ids = []
 
+    # Rebuild AI groups
     try:
         grouping_service = GroupingService(db)
         await grouping_service.rebuild_ai_groups()
@@ -583,24 +638,25 @@ async def batch_analyze_images(
 
     # Run batch project classification
     project_classifications = []
-    try:
-        classifier = ProjectClassifier(db, llava_client)
-        classification_results = await classifier.classify_batch(
-            image_ids=[r["image_id"] for r in results if r["success"]],
-            auto_assign=True,
-        )
-        project_classifications = [
-            {
-                "image_id": cr.image_id,
-                "assigned_project_id": cr.assigned_project_id,
-                "assigned_project_name": cr.assigned_project_name,
-                "confidence": cr.confidence,
-                "requires_review": cr.requires_review,
-            }
-            for cr in classification_results
-        ]
-    except Exception as exc:
-        logger.warning("Failed to classify projects after batch: %s", exc)
+    if successful_image_ids:
+        try:
+            classifier = ProjectClassifier(db, llava_client)
+            classification_results = await classifier.classify_batch(
+                image_ids=successful_image_ids,
+                auto_assign=True,
+            )
+            project_classifications = [
+                {
+                    "image_id": cr.image_id,
+                    "assigned_project_id": cr.assigned_project_id,
+                    "assigned_project_name": cr.assigned_project_name,
+                    "confidence": cr.confidence,
+                    "requires_review": cr.requires_review,
+                }
+                for cr in classification_results
+            ]
+        except Exception as exc:
+            logger.warning("Failed to classify projects after batch: %s", exc)
 
     return {
         "total": len(image_ids),
@@ -1471,6 +1527,7 @@ async def auto_rename_images(
     """
     Automatically rename images using AI with smart organization.
     Uses AI description, file metadata (date, size), and organizes into folders.
+    Optimized with bulk database operations and batch processing.
     """
     from sqlalchemy import select
     from datetime import datetime
@@ -1479,26 +1536,39 @@ async def auto_rename_images(
     results = []
     base_dir = Path(settings.upload_dir)
 
-    for image_id in image_ids:
-        result = await db.execute(select(Image).where(Image.id == image_id))
-        image = result.scalar_one_or_none()
+    # Bulk load all images at once (single query instead of N queries)
+    result = await db.execute(select(Image).where(Image.id.in_(image_ids)))
+    images = result.scalars().all()
 
-        if not image:
-            results.append({
-                "image_id": image_id,
-                "success": False,
-                "error": "Image not found"
-            })
-            continue
+    # Create lookup map and track missing images
+    image_by_id = {img.id: img for img in images}
+    found_image_ids = set(image_by_id.keys())
+    missing_image_ids = set(image_ids) - found_image_ids
 
+    for image_id in missing_image_ids:
+        results.append({
+            "image_id": image_id,
+            "success": False,
+            "error": "Image not found"
+        })
+
+    # Track images that need renaming
+    images_to_process = []
+    for image_id in found_image_ids:
+        image = image_by_id[image_id]
         if not image.ai_description:
             results.append({
                 "image_id": image_id,
                 "success": False,
                 "error": "Image not analyzed yet. Run AI analysis first."
             })
-            continue
+        else:
+            images_to_process.append(image)
 
+    # Process all valid images
+    file_operations = []  # Track successful file operations for rollback if needed
+
+    for image in images_to_process:
         try:
             # Get file metadata
             file_path = Path(image.file_path)
@@ -1547,21 +1617,24 @@ async def auto_rename_images(
                 new_path = target_dir / new_filename
                 counter += 1
 
+            # Store old path for potential rollback
+            old_path = file_path
+
             # Move file
             file_path.rename(new_path)
+            file_operations.append((old_path, new_path))
 
-            # Update database
+            # Update database record (will be committed in batch)
             image.current_filename = new_filename
             image.file_path = str(new_path)
-            await db.commit()
 
             # Get relative path for display
             rel_path = new_path.relative_to(base_dir)
 
             results.append({
-                "image_id": image_id,
+                "image_id": image.id,
                 "success": True,
-                "old_filename": file_path.name,
+                "old_filename": old_path.name,
                 "new_filename": new_filename,
                 "directory": str(rel_path.parent),
                 "quality": quality,
@@ -1569,12 +1642,30 @@ async def auto_rename_images(
             })
 
         except Exception as e:
-            logger.error(f"Error auto-renaming image {image_id}: {e}")
+            logger.error(f"Error auto-renaming image {image.id}: {e}")
             results.append({
-                "image_id": image_id,
+                "image_id": image.id,
                 "success": False,
                 "error": str(e)
             })
+
+    # Single commit for all database updates (instead of N commits)
+    try:
+        await db.commit()
+    except Exception as e:
+        logger.error(f"Database commit failed during auto-rename: {e}")
+        await db.rollback()
+
+        # Attempt to rollback file operations
+        for old_path, new_path in reversed(file_operations):
+            try:
+                if new_path.exists() and not old_path.exists():
+                    new_path.rename(old_path)
+                    logger.info(f"Rolled back file rename: {new_path} -> {old_path}")
+            except Exception as rollback_error:
+                logger.error(f"Failed to rollback file operation {new_path}: {rollback_error}")
+
+        raise HTTPException(status_code=500, detail=f"Failed to commit rename operations: {str(e)}")
 
     return {
         "total": len(image_ids),
