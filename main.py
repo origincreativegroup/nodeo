@@ -1109,6 +1109,16 @@ class ProjectAssignImagesRequest(BaseModel):
     replace: bool = False
 
 
+class NextcloudUploadRequest(BaseModel):
+    image_id: int
+    remote_path: str
+
+
+class R2UploadRequest(BaseModel):
+    image_id: int
+    key: str
+
+
 # Rename preview and execution endpoints
 @app.post("/api/rename/preview")
 async def preview_rename(
@@ -1687,14 +1697,13 @@ async def rename_image_with_project(
 # Storage integration endpoints
 @app.post("/api/storage/nextcloud/upload")
 async def upload_to_nextcloud(
-    image_id: int,
-    remote_path: str,
+    request: NextcloudUploadRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Upload image to Nextcloud"""
     from sqlalchemy import select
 
-    result = await db.execute(select(Image).where(Image.id == image_id))
+    result = await db.execute(select(Image).where(Image.id == request.image_id))
     image = result.scalar_one_or_none()
 
     if not image:
@@ -1703,7 +1712,7 @@ async def upload_to_nextcloud(
     try:
         upload_result = await nextcloud_client.upload_file(
             image.file_path,
-            remote_path
+            request.remote_path
         )
 
         if upload_result['success']:
@@ -1720,14 +1729,13 @@ async def upload_to_nextcloud(
 
 @app.post("/api/storage/r2/upload")
 async def upload_to_r2(
-    image_id: int,
-    key: str,
+    request: R2UploadRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Upload image to Cloudflare R2"""
     from sqlalchemy import select
 
-    result = await db.execute(select(Image).where(Image.id == image_id))
+    result = await db.execute(select(Image).where(Image.id == request.image_id))
     image = result.scalar_one_or_none()
 
     if not image:
@@ -1736,7 +1744,7 @@ async def upload_to_r2(
     try:
         upload_result = await r2_client.upload_file(
             image.file_path,
-            key,
+            request.key,
             metadata={
                 'original_filename': image.original_filename,
                 'description': image.ai_description or ''
@@ -1744,7 +1752,7 @@ async def upload_to_r2(
         )
 
         if upload_result['success']:
-            image.r2_key = key
+            image.r2_key = request.key
             image.storage_type = StorageType.R2
             await db.commit()
 
