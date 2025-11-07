@@ -2540,7 +2540,7 @@ async def list_images(db: AsyncSession = Depends(get_db)):
                 "ai_objects": img.ai_objects,
                 "ai_scene": img.ai_scene,
                 "ai_embedding": img.ai_embedding,
-                "metadata_sidecar_exists": metadata_sidecar_writer.exists(img.file_path),
+                "metadata_sidecar_exists": metadata_sidecar_writer.exists(img.file_path) if img.file_path else False,
                 "analyzed_at": img.analyzed_at.isoformat() if img.analyzed_at else None,
                 "created_at": img.created_at.isoformat() if img.created_at else None,
                 "groups": [
@@ -2577,9 +2577,22 @@ async def get_image_thumbnail(image_id: int, db: AsyncSession = Depends(get_db))
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
+    # Check if file_path is set in database
+    if not image.file_path:
+        logger.error(f"Thumbnail request for image {image_id} failed: file_path is NULL/empty in database")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Image {image_id} has no file_path set in database. This image may need to be re-uploaded."
+        )
+
+    # Check if file exists on disk
     file_path = Path(image.file_path)
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Image file not found")
+        logger.error(f"Thumbnail request for image {image_id} failed: file not found at path {image.file_path}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Image file not found on disk at {image.file_path}"
+        )
 
     return FileResponse(
         path=str(file_path),

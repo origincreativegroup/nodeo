@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Trash2, Eye, Edit, MoreVertical } from 'lucide-react';
+import { Check, Trash2, Eye, Edit, MoreVertical, ImageOff } from 'lucide-react';
 import Button from './Button';
 import { ImageData } from '../context/AppContext';
 
@@ -29,6 +29,7 @@ export default function ImageCard({
   className = '',
 }: ImageCardProps) {
   const [showMenu, setShowMenu] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const thumbnailUrl = `/api/images/${image.id}/thumbnail`;
   const sizeInMB = (image.file_size / (1024 * 1024)).toFixed(2);
@@ -52,12 +53,20 @@ export default function ImageCard({
         onClick={() => onView?.(image)}
       >
         <div className="relative aspect-square overflow-hidden rounded-t-lg bg-gray-100">
-          <img
-            src={thumbnailUrl}
-            alt={displayName}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
+          {imageError ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 text-gray-400">
+              <ImageOff className="w-12 h-12 mb-2" />
+              <span className="text-xs">Thumbnail unavailable</span>
+            </div>
+          ) : (
+            <img
+              src={thumbnailUrl}
+              alt={displayName}
+              className="w-full h-full object-cover"
+              loading="lazy"
+              onError={() => setImageError(true)}
+            />
+          )}
 
           {onSelect && (
             <div className="absolute top-2 left-2 z-10" onClick={handleCheckboxClick}>
@@ -165,13 +174,20 @@ export default function ImageCard({
         )}
 
         <div className="relative w-20 h-20 flex-shrink-0">
-          <img
-            src={thumbnailUrl}
-            alt={displayName}
-            className="w-full h-full object-cover rounded-lg"
-            loading="lazy"
-          />
-          {image.analyzed_at && (
+          {imageError ? (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100 rounded-lg text-gray-400">
+              <ImageOff className="w-6 h-6" />
+            </div>
+          ) : (
+            <img
+              src={thumbnailUrl}
+              alt={displayName}
+              className="w-full h-full object-cover rounded-lg"
+              loading="lazy"
+              onError={() => setImageError(true)}
+            />
+          )}
+          {image.analyzed_at && !imageError && (
             <div className="absolute -top-1 -right-1">
               <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white" />
             </div>
@@ -252,12 +268,19 @@ export default function ImageCard({
         )}
 
         <div className="w-12 h-12 flex-shrink-0">
-          <img
-            src={thumbnailUrl}
-            alt={displayName}
-            className="w-full h-full object-cover rounded"
-            loading="lazy"
-          />
+          {imageError ? (
+            <div className="w-full h-full flex items-center justify-center bg-gray-100 rounded text-gray-400">
+              <ImageOff className="w-5 h-5" />
+            </div>
+          ) : (
+            <img
+              src={thumbnailUrl}
+              alt={displayName}
+              className="w-full h-full object-cover rounded"
+              loading="lazy"
+              onError={() => setImageError(true)}
+            />
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
