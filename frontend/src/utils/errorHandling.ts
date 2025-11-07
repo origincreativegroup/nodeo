@@ -62,7 +62,7 @@ export function createActionableError(
         },
         {
           label: 'Check Connection',
-          action: () => window.open('https://www.google.com', '_blank'),
+          action: () => { void window.open('https://www.google.com', '_blank'); },
           type: 'secondary'
         }
       ],
@@ -189,12 +189,12 @@ export function createActionableError(
       actions: [
         {
           label: 'Check Ollama',
-          action: () => window.open('http://localhost:11434', '_blank'),
+          action: () => { void window.open('http://localhost:11434', '_blank'); },
           type: 'primary'
         },
         {
           label: 'View Docs',
-          action: () => window.open('https://ollama.ai/docs', '_blank'),
+          action: () => { void window.open('https://ollama.ai/docs', '_blank'); },
           type: 'secondary'
         }
       ],

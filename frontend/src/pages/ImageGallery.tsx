@@ -7,7 +7,7 @@ import Modal from '../components/Modal'
 import ImageSelectionPanel from '../components/ImageSelectionPanel'
 import BulkRenameModal, { BulkRenamePattern } from '../components/BulkRenameModal'
 import toast from 'react-hot-toast'
-import { uploadImages, analyzeImage, batchAnalyzeImages, bulkRenameFiles } from '../services/api'
+import { uploadImages, batchAnalyzeImages, bulkRenameFiles } from '../services/api'
 
 export default function ImageGallery() {
   const { images, addImages, removeImage, updateImage, selectedImageIds, clearSelection } = useApp()
@@ -61,29 +61,6 @@ export default function ImageGallery() {
     }
   }
 
-  const handleAnalyzeSingle = async (imageId: number) => {
-    try {
-      toast.loading(`Analyzing image...`, { id: `analyze-${imageId}` })
-
-      const response = await analyzeImage(imageId)
-
-      if (response.success) {
-        updateImage(imageId, {
-          ai_description: response.analysis.description,
-          ai_tags: response.analysis.tags,
-          ai_objects: response.analysis.objects,
-          ai_scene: response.analysis.scene,
-          analyzed_at: new Date().toISOString(),
-        })
-
-        toast.success('Analysis complete!', { id: `analyze-${imageId}` })
-      }
-    } catch (error) {
-      console.error('Analysis error:', error)
-      toast.error('Failed to analyze image', { id: `analyze-${imageId}` })
-    }
-  }
-
   const handleBatchAnalyze = async () => {
     const imagesToAnalyze = selectedImageIds.length > 0
       ? selectedImageIds
@@ -125,13 +102,6 @@ export default function ImageGallery() {
       toast.error('Error analyzing images', { id: 'batch-analyze' })
     } finally {
       setAnalyzing(false)
-    }
-  }
-
-  const handleDelete = (imageId: number) => {
-    if (confirm('Are you sure you want to delete this image?')) {
-      removeImage(imageId)
-      toast.success('Image deleted')
     }
   }
 

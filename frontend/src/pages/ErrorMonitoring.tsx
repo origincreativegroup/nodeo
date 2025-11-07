@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertTriangle, CheckCircle, Info, XCircle } from 'lucide-react';
 
 interface ErrorLog {
@@ -24,8 +24,8 @@ interface FeedbackItem {
 }
 
 export default function ErrorMonitoring() {
-  const [errors, setErrors] = useState<ErrorLog[]>([]);
-  const [feedback, setFeedback] = useState<FeedbackItem[]>([]);
+  const [errors, _setErrors] = useState<ErrorLog[]>([]);
+  const [feedback, _setFeedback] = useState<FeedbackItem[]>([]);
   const [activeTab, setActiveTab] = useState<'errors' | 'feedback'>('errors');
 
   // In a real implementation, this would fetch from an API
