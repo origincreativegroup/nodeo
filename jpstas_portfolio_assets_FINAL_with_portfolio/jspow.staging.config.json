@@ -1,0 +1,20 @@
+{
+  "incomingDir": "assets/_incoming",
+  "processedDir": "assets/processed",
+  "pattern": "{project}-{section}-{descriptor}-{width}px{--variant}.{ext}",
+  "defaults": {
+    "project": "unsorted",
+    "section": "gallery",
+    "width": 1600,
+    "ext": "webp"
+  },
+  "manifest": {
+    "path": "data/jspow.manifest.json",
+    "format": "json"
+  },
+  "rules": [
+    { "match": "*/hero/*", "section": "hero", "width": 2400 },
+    { "match": "*/process/*", "section": "process", "width": 1600 },
+    { "match": "*/thumbs/*", "section": "thumb", "width": 400 }
+  ]
+}

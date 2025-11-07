@@ -1,0 +1,247 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JPSTAS Assets GUI</title>
+  <style>
+    :root { --border:#e5e7eb; --muted:#6b7280; --accent:#111827; --bg:#ffffff; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; background: var(--bg); }
+    header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { border: 1px solid var(--border); border-radius: 12px; padding: 16px; background: white; }
+    input, textarea { width: 100%; padding: 8px; border:1px solid #d1d5db; border-radius:8px; }
+    label { font-size: 12px; color: #4b5563; display:block; margin-top:8px; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .key { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color:var(--muted); }
+    .btn { background: black; color: white; border: 0; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .btn.secondary { background: var(--accent); }
+    .sticky { position: sticky; top: 0; background: var(--bg); padding: 8px 0; z-index: 10; }
+    .muted { color:var(--muted); font-size: 12px; }
+    .ok { color: #16a34a; }
+    .err { color: #dc2626; }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 12px; }
+    .tab { padding:8px 12px; border:1px solid var(--border); border-radius:999px; cursor:pointer; }
+    .tab.active { background:black; color:white; border-color:black; }
+    .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom: 8px; }
+    .spacer { flex:1; }
+    .seg { border:1px solid var(--border); border-radius: 10px; overflow:hidden; display:inline-flex; }
+    .seg button { border:0; padding:6px 10px; background:white; cursor:pointer; font-size:12px; }
+    .seg button.active { background:black; color:white; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="sticky">
+    <div>
+      <h1 style="margin:0;">Assets GUI</h1>
+      <div class="muted">Edit Cloudflare R2 URLs & Stream IDs, grouped by project.</div>
+    </div>
+    <div class="row">
+      <select id="projectSelect" style="padding:8px;border:1px solid #d1d5db;border-radius:8px;margin-right:8px;"><option value="">Global (urls.json)</option></select>
+      <button class="btn" id="save">Save</button>
+      <button class="btn secondary" id="reload">Reload</button>
+      <button class="btn" id="inject">Inject Now</button>
+      <button class="btn secondary" id="inject-dry">Dry Run</button>
+    </div>
+  </header>
+
+  <div class="controls">
+    <div class="seg" role="tablist" aria-label="View">
+      <button class="active" id="view-grouped">Grouped</button>
+      <button id="view-flat">All Items</button>
+    </div>
+    <label class="row" style="gap:6px;"><input type="checkbox" id="missingOnly" /> <span class="muted">Missing only</span></label>
+    <div class="spacer"></div>
+    <div class="muted" id="status"></div>
+  </div>
+
+  <div id="summary" class="card" style="margin-bottom:12px; display:none;"></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="grid" id="grid"></div>
+
+  <script>
+    let manifest = [];
+    let currentProject = "";
+    function populateProjectSelect(){ const sel = document.getElementById('projectSelect'); sel.length=1; const projects = getProjects(); projects.forEach(p=>{ const o=document.createElement('option'); o.value=p; o.textContent=p; sel.appendChild(o); }); sel.onchange=async()=>{ currentProject = sel.value; await loadAll(); }; }
+    let urls = {};
+    let activeProject = "all";
+    let grouped = true;
+
+    let missingOnly = false;
+
+    function isMissing(item) {
+      const entry = urls[item.key];
+      if (item.type === "image") return !entry || !entry.url;
+      return !entry || !entry.streamId;
+    }
+
+    function computeStats(projectSlug = null) {
+      const stats = { images: 0, imagesMissing: 0, videos: 0, videosMissing: 0 };
+      manifest.forEach(item => {
+        if (projectSlug && item.key.split("/")[0] !== projectSlug) return;
+        if (item.type === "image") {
+          stats.images++;
+          if (isMissing(item)) stats.imagesMissing++;
+        } else if (item.type === "video") {
+          stats.videos++;
+          if (isMissing(item)) stats.videosMissing++;
+        }
+      });
+      return stats;
+    }
+
+    function renderSummary() {
+      const summary = document.getElementById("summary");
+      if (!manifest.length) {
+        summary.style.display = "none";
+        return;
+      }
+      const globalStats = computeStats();
+      const viewStats = computeStats(activeProject === "all" ? null : activeProject);
+      const mappedImages = globalStats.images - globalStats.imagesMissing;
+      const mappedVideos = globalStats.videos - globalStats.videosMissing;
+      summary.style.display = "block";
+      summary.innerHTML = `
+        <strong>Summary</strong><br />
+        Images: ${mappedImages}/${globalStats.images} mapped (${globalStats.imagesMissing} missing)<br />
+        Videos: ${mappedVideos}/${globalStats.videos} mapped (${globalStats.videosMissing} missing)<br />
+        View: ${activeProject === "all" ? "All projects" : activeProject} — ${viewStats.images - viewStats.imagesMissing}/${viewStats.images} images, ${viewStats.videos - viewStats.videosMissing}/${viewStats.videos} videos
+      `;
+    }
+
+    function el(tag, props={}, children=[]) {
+      const e = document.createElement(tag);
+      Object.assign(e, props);
+      children.forEach(c => e.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
+      return e;
+    }
+
+    function field(labelText, input) {
+      const wrap = el("div");
+      wrap.appendChild(el("label", { innerText: labelText }));
+      wrap.appendChild(input);
+      return wrap;
+    }
+
+    function card(item) {
+      const u = urls[item.key] || (item.type === "image" ? { url: "" } : { streamId: "", poster: "" });
+      const c = el("div", { className: "card" }, [
+        el("div", { className: "row" }, [
+          el("div", { innerText: item.key, className: "key" }),
+          el("div", { innerText: `(${item.type} · ${item.aspect})`, className: "muted", style: "margin-left:auto;" })
+        ]),
+        field("Alt (from manifest)", el("input", { value: item.alt, readOnly: true })),
+        field("Caption (from manifest)", el("input", { value: item.caption || "", readOnly: true })),
+        ...(item.type === "image"
+          ? [ field("R2 URL", el("input", { value: u.url || "", oninput: e => { urls[item.key] = { url: e.target.value }; renderSummary(); updateStatus(); } })) ]
+          : [
+              field("Stream ID", el("input", { value: u.streamId || "", oninput: e => { urls[item.key] = urls[item.key] || {}; urls[item.key].streamId = e.target.value; renderSummary(); updateStatus(); } })),
+              field("Poster URL (optional)", el("input", { value: u.poster || "", oninput: e => { urls[item.key] = urls[item.key] || {}; urls[item.key].poster = e.target.value; renderSummary(); updateStatus(); } }))
+            ]
+        ),
+        el("div", { className: "muted", innerText: `Suggested: ${item.suggestedFilename}` }),
+        el("div", { className: "muted", innerText: item.notes || "" })
+      ]);
+      return c;
+    }
+
+    function getProjects() {
+      const set = new Set();
+      manifest.forEach(m => {
+        const proj = m.key.split("/")[0];
+        set.add(proj);
+      });
+      return Array.from(set).sort();
+    }
+
+    function renderTabs() {
+      const tabs = document.getElementById("tabs");
+      tabs.innerHTML = "";
+      const projects = ["all", ...getProjects()];
+      projects.forEach(p => {
+        const stats = computeStats(p === "all" ? null : p);
+        const missingCount = stats.imagesMissing + stats.videosMissing;
+        const label = p === "all" ? `all (${missingCount})` : `${p} (${missingCount})`;
+        const t = el("div", { className: "tab" + (activeProject === p ? " active" : ""), onclick: () => { activeProject = p; renderGrid(); renderTabs(); renderSummary(); } }, [label]);
+        tabs.appendChild(t);
+      });
+      tabs.style.display = grouped ? "flex" : "none";
+    }
+
+    function updateStatus(items = []) {
+      const stats = computeStats(activeProject === "all" ? null : activeProject);
+      const missing = stats.imagesMissing + stats.videosMissing;
+      const descriptor = grouped ? (activeProject === "all" ? "all projects" : activeProject) : "all items";
+      document.getElementById("status").innerText = `${items.length} items in ${descriptor}${missingOnly ? " (missing only)" : ""} — Missing: ${missing} (images ${stats.imagesMissing}, videos ${stats.videosMissing}) — mapping: ${currentProject || "global"}.`;
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById("grid");
+      grid.innerHTML = "";
+
+      const allItems = manifest.filter(m => activeProject === "all" ? true : m.key.startsWith(activeProject + "/"));
+      const items = allItems.filter(m => {
+        if (!missingOnly) return true;
+        return isMissing(m);
+      });
+
+      items.forEach(item => grid.appendChild(card(item)));
+      updateStatus(items);
+    }
+
+    async function loadAll() {
+      const [m, u] = await Promise.all([
+        fetch("/api/manifest").then(r => r.json()),
+        fetch(`/api/urls${currentProject ? `?project=${currentProject}` : ""}`).then(r => r.json())
+      ]);
+      manifest = m;
+      urls = u;
+      populateProjectSelect();
+      renderTabs();
+      renderGrid();
+      renderSummary();
+    }
+
+    async function save() {
+      const res = await fetch(`/api/urls${currentProject ? `?project=${currentProject}` : ""}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(urls)
+      });
+      if (res.ok) {
+        document.getElementById("status").innerHTML = "<span class='ok'>Saved urls.json</span>";
+        renderSummary();
+      } else {
+        document.getElementById("status").innerHTML = "<span class='err'>Save failed</span>";
+      }
+    }
+
+    document.getElementById("save").onclick = save;
+    document.getElementById("reload").onclick = loadAll;
+
+    const missingCb = document.getElementById("missingOnly");
+    missingCb.onchange = () => { missingOnly = missingCb.checked; renderGrid(); renderSummary(); };
+
+    document.getElementById("view-grouped").onclick = () => { grouped = true; activeProject = activeProject || "all"; document.getElementById("view-grouped").classList.add("active"); document.getElementById("view-flat").classList.remove("active"); renderTabs(); renderGrid(); renderSummary(); };
+    document.getElementById("view-flat").onclick = () => { grouped = false; document.getElementById("view-flat").classList.add("active"); document.getElementById("view-grouped").classList.remove("active"); renderTabs(); activeProject = "all"; renderGrid(); renderSummary(); };
+
+    
+    async function inject(dry=false){
+      const res = await fetch(`/api/inject${dry ? "?dry=1" : ""}${currentProject ? (dry ? "&" : "?") + `project=${currentProject}` : ""}`, { method: "POST" });
+      const json = await res.json().catch(()=>({}));
+      let msg = (dry ? "[DRY RUN] " : "") + (json.ok ? "Injection completed." : "Injection failed.");
+      msg += json.stdout ? "\n" + json.stdout : "";
+      msg += json.stderr ? "\n" + json.stderr : "";
+      document.getElementById("status").innerText = msg;
+      if (!dry) await loadAll();
+    }
+
+    document.getElementById("inject").onclick = () => inject(false);
+    document.getElementById("inject-dry").onclick = () => inject(true);
+
+    loadAll();
+  </script>
+</body>
+</html>
