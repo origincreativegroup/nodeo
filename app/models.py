@@ -176,6 +176,7 @@ class Image(Base):
         "ImageGroup",
         secondary="image_group_associations",
         back_populates="images",
+        overlaps="group_assignments",
     )
     upload_batch = relationship("UploadBatch", back_populates="images")
     project = relationship("Project", back_populates="images")
@@ -289,11 +290,13 @@ class ImageGroup(Base):
         "Image",
         secondary="image_group_associations",
         back_populates="groups",
+        overlaps="group_assignments",
     )
     assignments = relationship(
         "ImageGroupAssociation",
         back_populates="group",
         cascade="all, delete-orphan",
+        overlaps="groups,images",
     )
     upload_batch = relationship("UploadBatch", back_populates="group")
     project = relationship("Project", back_populates="groups")
@@ -312,5 +315,5 @@ class ImageGroupAssociation(Base):
     attributes = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    group = relationship("ImageGroup", back_populates="assignments")
-    image = relationship("Image", back_populates="group_assignments")
+    group = relationship("ImageGroup", back_populates="assignments", overlaps="groups,images")
+    image = relationship("Image", back_populates="group_assignments", overlaps="groups,images")
