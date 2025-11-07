@@ -130,6 +130,29 @@ export const applyRename = async (
   return response.data
 }
 
+export interface BulkRenamePattern {
+  find: string
+  replace: string
+  useRegex: boolean
+  caseSensitive: boolean
+}
+
+export const bulkRenameFiles = async (
+  imageIds: number[],
+  pattern: BulkRenamePattern,
+  createBackups: boolean = true
+): Promise<RenameResponse> => {
+  const response = await api.post<RenameResponse>('/rename/bulk', {
+    image_ids: imageIds,
+    find: pattern.find,
+    replace: pattern.replace,
+    use_regex: pattern.useRegex,
+    case_sensitive: pattern.caseSensitive,
+    create_backups: createBackups,
+  })
+  return response.data
+}
+
 export interface GroupingRecord {
   id: number
   name: string

@@ -683,6 +683,15 @@ class RenameApplyRequest(BaseModel):
     create_backups: bool = True
 
 
+class BulkRenameRequest(BaseModel):
+    image_ids: List[int]
+    find: str
+    replace: str
+    use_regex: bool = False
+    case_sensitive: bool = False
+    create_backups: bool = True
+
+
 class ManualGroupRequest(BaseModel):
     name: str
     description: Optional[str] = None
@@ -1024,6 +1033,117 @@ async def apply_rename(
 
         except Exception as e:
             logger.error(f"Error renaming image {image_id}: {e}")
+            results.append({
+                "image_id": image_id,
+                "success": False,
+                "error": str(e)
+            })
+
+    return {
+        "total": len(request.image_ids),
+        "succeeded": sum(1 for r in results if r.get("success")),
+        "results": results
+    }
+
+
+@app.post("/api/rename/bulk")
+async def bulk_rename(
+    request: BulkRenameRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Apply bulk find/replace rename operation"""
+    from sqlalchemy import select
+    import re
+    import shutil
+    from pathlib import Path
+
+    results = []
+
+    if not request.find:
+        raise HTTPException(status_code=400, detail="Find pattern cannot be empty")
+
+    for image_id in request.image_ids:
+        result = await db.execute(select(Image).where(Image.id == image_id))
+        image = result.scalar_one_or_none()
+
+        if not image:
+            results.append({
+                "image_id": image_id,
+                "success": False,
+                "error": "Image not found"
+            })
+            continue
+
+        try:
+            current_filename = image.current_filename
+            old_path = Path(image.file_path)
+
+            # Apply find/replace based on settings
+            new_filename = current_filename
+
+            if request.use_regex:
+                try:
+                    flags = 0 if request.case_sensitive else re.IGNORECASE
+                    new_filename = re.sub(request.find, request.replace, current_filename, flags=flags)
+                except re.error as e:
+                    results.append({
+                        "image_id": image_id,
+                        "success": False,
+                        "error": f"Invalid regex pattern: {str(e)}"
+                    })
+                    continue
+            else:
+                if request.case_sensitive:
+                    new_filename = current_filename.replace(request.find, request.replace)
+                else:
+                    # Case-insensitive replacement
+                    pattern = re.escape(request.find)
+                    new_filename = re.sub(pattern, request.replace, current_filename, flags=re.IGNORECASE)
+
+            # Skip if filename didn't change
+            if new_filename == current_filename:
+                results.append({
+                    "image_id": image_id,
+                    "success": True,
+                    "old_filename": current_filename,
+                    "new_filename": current_filename
+                })
+                continue
+
+            # Create new path
+            new_path = old_path.parent / new_filename
+
+            # Check if target file already exists
+            if new_path.exists():
+                results.append({
+                    "image_id": image_id,
+                    "success": False,
+                    "error": f"File already exists: {new_filename}"
+                })
+                continue
+
+            # Create backup if requested
+            if request.create_backups:
+                backup_path = old_path.parent / f"{current_filename}.backup"
+                shutil.copy2(old_path, backup_path)
+
+            # Rename file
+            old_path.rename(new_path)
+
+            # Update database
+            image.current_filename = new_filename
+            image.file_path = str(new_path)
+            await db.commit()
+
+            results.append({
+                "image_id": image_id,
+                "success": True,
+                "old_filename": current_filename,
+                "new_filename": new_filename
+            })
+
+        except Exception as e:
+            logger.error(f"Error bulk renaming image {image_id}: {e}")
             results.append({
                 "image_id": image_id,
                 "success": False,
