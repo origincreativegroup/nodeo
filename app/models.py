@@ -314,3 +314,38 @@ class ImageGroupAssociation(Base):
 
     group = relationship("ImageGroup", back_populates="assignments")
     image = relationship("Image", back_populates="group_assignments")
+
+
+class NextcloudSettings(Base):
+    """User-configurable Nextcloud connection settings"""
+    __tablename__ = "nextcloud_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Connection settings
+    server_url = Column(String(500), nullable=False)
+    username = Column(String(255), nullable=False)
+    password = Column(String(500), nullable=False)  # Should be encrypted in production
+    base_path = Column(String(500), default="/jspow")
+
+    # Sync settings
+    auto_sync_enabled = Column(Boolean, default=True)
+    sync_on_upload = Column(Boolean, default=False)
+    sync_on_rename = Column(Boolean, default=True)
+    sync_strategy = Column(String(50), default="mirror")  # mirror | backup | primary
+
+    # Connection status
+    is_connected = Column(Boolean, default=False)
+    last_connection_test = Column(DateTime(timezone=True))
+    connection_error = Column(Text)
+
+    # Statistics
+    total_synced = Column(Integer, default=0)
+    last_sync_at = Column(DateTime(timezone=True))
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Only one settings record should exist (singleton pattern)
+    # Use UPSERT in application logic
