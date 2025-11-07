@@ -32,6 +32,8 @@ import {
   downloadMetadataSidecar,
   AssetMetadata,
 } from '../services/api'
+import { createActionableError, retryWithBackoff } from '../utils/errorHandling'
+import ErrorDisplay from '../components/ErrorDisplay'
 
 const groupTypeLabels: Record<GroupType, string> = {
   ai_tag_cluster: 'AI tag cluster',
@@ -108,6 +110,7 @@ export default function RenameManager() {
   const [metadataDrafts, setMetadataDrafts] = useState<Record<number, MetadataFormState>>({})
   const [metadataSavingId, setMetadataSavingId] = useState<number | null>(null)
   const [metadataDownloadingId, setMetadataDownloadingId] = useState<number | null>(null)
+  const [currentError, setCurrentError] = useState<ReturnType<typeof createActionableError> | null>(null)
 
   const activeGroup = useMemo(
     () => groups.find((group) => group.id === activeGroupFilter) ?? null,
@@ -293,19 +296,37 @@ export default function RenameManager() {
     }
 
     if (imagesToRename.length === 0) {
-      toast.error('No analyzed images to rename')
+      toast.error('No analyzed images to rename. Please upload and analyze images first.')
       return
     }
 
     setLoadingPreview(true)
+    setCurrentError(null)
 
     try {
-      const response = await previewRename(template, imagesToRename)
+      const response = await retryWithBackoff(
+        () => previewRename(template, imagesToRename),
+        {
+          maxRetries: 2,
+          onRetry: (attempt) => {
+            toast.loading(`Retrying preview generation (attempt ${attempt}/2)...`, {
+              id: 'preview-retry'
+            })
+          }
+        }
+      )
       setPreviews(response.previews)
       initializeMetadataDrafts(response.previews)
+      toast.dismiss('preview-retry')
     } catch (error) {
       console.error('Preview error:', error)
-      toast.error('Failed to generate preview')
+      const actionableError = createActionableError(error, {
+        operation: 'preview',
+        template,
+        imageCount: imagesToRename.length
+      })
+      setCurrentError(actionableError)
+      toast.error(`Preview failed: ${actionableError.message}`)
       setPreviews([])
       setMetadataDrafts({})
     } finally {
@@ -323,7 +344,7 @@ export default function RenameManager() {
 
   const handleAutoRename = async () => {
     if (imagesToRename.length === 0) {
-      toast.error('No analyzed images to rename')
+      toast.error('No analyzed images to rename. Please upload and analyze images first.')
       return
     }
 
@@ -336,17 +357,38 @@ export default function RenameManager() {
     }
 
     setApplying(true)
+    setCurrentError(null)
 
     try {
       toast.loading(`Auto-renaming ${imagesToRename.length} images...`, { id: 'auto-rename' })
 
-      const response = await fetch('/api/rename/auto', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(imagesToRename),
-      })
+      const response = await retryWithBackoff(
+        async () => {
+          const res = await fetch('/api/rename/auto', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(imagesToRename),
+          })
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }))
+            throw Object.assign(new Error(errorData.detail || 'Auto-rename failed'), {
+              response: res,
+              status: res.status
+            })
+          }
+          return res.json()
+        },
+        {
+          maxRetries: 2,
+          onRetry: (attempt) => {
+            toast.loading(`Retrying auto-rename (attempt ${attempt}/2)...`, {
+              id: 'auto-rename'
+            })
+          }
+        }
+      )
 
-      const data = await response.json()
+      const data = response
 
       data.results.forEach((result: any) => {
         if (result.success) {
@@ -357,15 +399,38 @@ export default function RenameManager() {
         }
       })
 
-      toast.success(`Successfully renamed ${data.succeeded} of ${data.total} images`, {
-        id: 'auto-rename',
-      })
+      const successMessage = data.total === data.succeeded
+        ? `Successfully auto-renamed all ${data.total} images!`
+        : `Auto-renamed ${data.succeeded} of ${data.total} images`
+
+      toast.success(successMessage, { id: 'auto-rename', duration: 5000 })
 
       if (data.results.some((r: any) => !r.success)) {
         const errors = data.results.filter((r: any) => !r.success)
-        errors.forEach((err: any) => {
-          toast.error(`Failed to rename image ${err.image_id}: ${err.error}`)
-        })
+
+        if (errors.length > 3) {
+          toast.error(
+            `${errors.length} files failed. Click "Report Issue" for details.`,
+            { duration: 8000 }
+          )
+          const actionableError = createActionableError(
+            new Error('Multiple auto-rename failures'),
+            {
+              operation: 'auto_rename',
+              failedCount: errors.length,
+              failures: errors.map((e: any) => ({ id: e.image_id, error: e.error }))
+            }
+          )
+          setCurrentError(actionableError)
+        } else {
+          errors.forEach((err: any) => {
+            const errorDetail = err.error || 'Unknown error'
+            toast.error(
+              `Failed to auto-rename image ${err.image_id}: ${errorDetail}`,
+              { duration: 6000 }
+            )
+          })
+        }
       }
 
       if (selectedImageIds.length > 0) {
@@ -373,7 +438,15 @@ export default function RenameManager() {
       }
     } catch (error) {
       console.error('Auto-rename error:', error)
-      toast.error('Error auto-renaming images', { id: 'auto-rename' })
+      const actionableError = createActionableError(error, {
+        operation: 'auto_rename',
+        imageCount: imagesToRename.length
+      })
+      setCurrentError(actionableError)
+      toast.error(
+        `Auto-rename failed: ${actionableError.message}`,
+        { id: 'auto-rename', duration: 8000 }
+      )
     } finally {
       setApplying(false)
     }
@@ -468,11 +541,22 @@ export default function RenameManager() {
   const handleApplyRename = async () => {
     setApplying(true)
     setShowConfirmModal(false)
+    setCurrentError(null)
 
     try {
       toast.loading(`Renaming ${imagesToRename.length} images...`, { id: 'rename' })
 
-      const response = await applyRename(template, imagesToRename, createBackups)
+      const response = await retryWithBackoff(
+        () => applyRename(template, imagesToRename, createBackups),
+        {
+          maxRetries: 2,
+          onRetry: (attempt) => {
+            toast.loading(`Retrying rename operation (attempt ${attempt}/2)...`, {
+              id: 'rename'
+            })
+          }
+        }
+      )
 
       response.results.forEach((result) => {
         if (result.success && result.new_filename) {
@@ -483,15 +567,43 @@ export default function RenameManager() {
         }
       })
 
-      toast.success(`Successfully renamed ${response.succeeded} of ${response.total} images`, {
-        id: 'rename',
-      })
+      const successMessage = response.total === response.succeeded
+        ? `Successfully renamed all ${response.total} images!`
+        : `Renamed ${response.succeeded} of ${response.total} images`
+
+      toast.success(successMessage, { id: 'rename', duration: 5000 })
 
       if (response.results.some((r) => !r.success)) {
         const errors = response.results.filter((r) => !r.success)
-        errors.forEach((err) => {
-          toast.error(`Failed to rename image ${err.image_id}: ${err.error}`)
-        })
+
+        // Show summary if many errors, individual messages if few
+        if (errors.length > 3) {
+          toast.error(
+            `${errors.length} files failed to rename. Click "Report Issue" for details.`,
+            { duration: 8000 }
+          )
+          const actionableError = createActionableError(
+            new Error('Multiple rename failures'),
+            {
+              operation: 'batch_rename',
+              failedCount: errors.length,
+              failures: errors.map(e => ({ id: e.image_id, error: e.error }))
+            }
+          )
+          setCurrentError(actionableError)
+        } else {
+          errors.forEach((err) => {
+            const errorDetail = err.error || 'Unknown error'
+            toast.error(
+              `Failed to rename image ${err.image_id}: ${errorDetail}. ${
+                errorDetail.includes('permission') ? 'Check file permissions.' :
+                errorDetail.includes('not found') ? 'File may have been moved or deleted.' :
+                'Try again or report this issue.'
+              }`,
+              { duration: 6000 }
+            )
+          })
+        }
       }
 
       if (selectedImageIds.length > 0) {
@@ -501,7 +613,17 @@ export default function RenameManager() {
       await handlePreview()
     } catch (error) {
       console.error('Rename error:', error)
-      toast.error('Error renaming images', { id: 'rename' })
+      const actionableError = createActionableError(error, {
+        operation: 'rename',
+        template,
+        imageCount: imagesToRename.length,
+        backupsEnabled: createBackups
+      })
+      setCurrentError(actionableError)
+      toast.error(
+        `Rename failed: ${actionableError.message}`,
+        { id: 'rename', duration: 8000 }
+      )
     } finally {
       setApplying(false)
     }
@@ -675,6 +797,16 @@ export default function RenameManager() {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Error Display */}
+      {currentError && (
+        <div className="mb-6">
+          <ErrorDisplay
+            error={currentError}
+            onDismiss={() => setCurrentError(null)}
+          />
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[280px,1fr]">
         <aside className="space-y-6">
           <div className="bg-white rounded-lg shadow p-5">
