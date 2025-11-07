@@ -48,6 +48,7 @@ from app.services import (
     AssetType,
 )
 from app.services.project_service import ProjectService
+from app.services.error_handler import create_error_response, log_detailed_error
 from app.services.project_rename import ProjectRenameService
 from app.ai.project_classifier import ProjectClassifier
 from app.storage.nextcloud_sync import NextcloudSyncService
@@ -697,6 +698,29 @@ class BulkTagUpdateRequest(BaseModel):
     image_ids: List[int] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     operation: Literal["replace", "add", "remove"] = "replace"
+
+
+class FeedbackRequest(BaseModel):
+    type: Literal["bug", "feature", "improvement", "other"]
+    title: str
+    description: str
+    stepsToReproduce: Optional[str] = None
+    email: Optional[str] = None
+    sentiment: Optional[Literal["positive", "negative"]] = None
+    systemInfo: Optional[Dict[str, Any]] = None
+    isErrorReport: bool = False
+
+
+class ErrorLogRequest(BaseModel):
+    title: str
+    message: str
+    category: str
+    severity: str
+    technicalDetails: Optional[str] = None
+    timestamp: str
+    context: Optional[Dict[str, Any]] = None
+    userAgent: Optional[str] = None
+    url: Optional[str] = None
 
 
 # Grouping endpoints
@@ -2084,6 +2108,120 @@ async def import_from_nextcloud(
     except Exception as e:
         logger.error(f"Error importing from Nextcloud: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Feedback and Error Logging endpoints
+@app.post("/api/feedback")
+async def submit_feedback(
+    request: FeedbackRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Submit user feedback or bug reports
+
+    Args:
+        request: Feedback data including type, title, description, etc.
+
+    Returns:
+        Success response with ticket ID
+    """
+    try:
+        # Generate a unique ticket ID
+        ticket_id = str(uuid4())[:8].upper()
+
+        # Log the feedback
+        feedback_type = request.type.upper()
+        logger.info(
+            f"[FEEDBACK-{ticket_id}] Type: {feedback_type} | "
+            f"Title: {request.title} | "
+            f"Email: {request.email or 'anonymous'}"
+        )
+        logger.info(f"[FEEDBACK-{ticket_id}] Description: {request.description}")
+
+        if request.stepsToReproduce:
+            logger.info(f"[FEEDBACK-{ticket_id}] Steps to reproduce:\n{request.stepsToReproduce}")
+
+        if request.systemInfo:
+            logger.info(f"[FEEDBACK-{ticket_id}] System info: {request.systemInfo}")
+
+        # TODO: In production, this would:
+        # - Store feedback in database
+        # - Send email notification
+        # - Create issue in issue tracker (e.g., GitHub, Jira)
+        # - Trigger webhooks/integrations
+
+        return {
+            "success": True,
+            "message": "Thank you for your feedback!",
+            "ticketId": ticket_id
+        }
+
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to submit feedback. Please try again later."
+        )
+
+
+@app.post("/api/errors/log")
+async def log_error(request: ErrorLogRequest):
+    """
+    Log errors from the frontend for monitoring and debugging
+
+    Args:
+        request: Error details including title, message, category, severity, etc.
+
+    Returns:
+        Success response
+    """
+    try:
+        # Log the error with appropriate severity
+        error_id = str(uuid4())[:8].upper()
+        log_message = (
+            f"[CLIENT-ERROR-{error_id}] {request.title}: {request.message} | "
+            f"Category: {request.category} | Severity: {request.severity}"
+        )
+
+        if request.severity == "critical":
+            logger.critical(log_message)
+        elif request.severity == "error":
+            logger.error(log_message)
+        elif request.severity == "warning":
+            logger.warning(log_message)
+        else:
+            logger.info(log_message)
+
+        if request.technicalDetails:
+            logger.error(f"[CLIENT-ERROR-{error_id}] Technical details: {request.technicalDetails}")
+
+        if request.context:
+            logger.error(f"[CLIENT-ERROR-{error_id}] Context: {request.context}")
+
+        if request.userAgent:
+            logger.info(f"[CLIENT-ERROR-{error_id}] User Agent: {request.userAgent}")
+
+        if request.url:
+            logger.info(f"[CLIENT-ERROR-{error_id}] URL: {request.url}")
+
+        # TODO: In production, this would:
+        # - Store error in database for analytics
+        # - Send to error tracking service (e.g., Sentry, Rollbar)
+        # - Trigger alerts for critical errors
+        # - Aggregate errors for monitoring dashboard
+
+        return {
+            "success": True,
+            "errorId": error_id
+        }
+
+    except Exception as e:
+        logger.error(f"Error logging client error: {e}")
+        # Don't raise exception - we don't want error logging to cause more errors
+        return {
+            "success": False,
+            "message": "Failed to log error"
+        }
 
 
 # Serve frontend static files and handle SPA routing

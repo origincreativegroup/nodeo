@@ -7,6 +7,7 @@ import ImageGallery from './pages/ImageGallery'
 import RenameManager from './pages/RenameManager'
 import StorageManager from './pages/StorageManager'
 import Settings from './pages/Settings'
+import FloatingFeedbackButton from './components/FloatingFeedbackButton'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
             <Route path="/settings" element={<Settings />} />
           </Routes>
           <Toaster position="top-right" />
+          <FloatingFeedbackButton />
         </div>
       </Router>
     </AppProvider>
