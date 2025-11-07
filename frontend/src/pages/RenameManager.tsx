@@ -20,6 +20,7 @@ import { useApp, GroupSummary, GroupType } from '../context/AppContext'
 import Button from '../components/Button'
 import LoadingSpinner from '../components/LoadingSpinner'
 import Modal from '../components/Modal'
+import { TemplateManager } from '../components/TemplateManager'
 import toast from 'react-hot-toast'
 import {
   previewRename,
@@ -98,6 +99,7 @@ export default function RenameManager() {
   const [showCollectionModal, setShowCollectionModal] = useState(false)
   const [collectionName, setCollectionName] = useState('')
   const [collectionDescription, setCollectionDescription] = useState('')
+  const [showTemplateManager, setShowTemplateManager] = useState(false)
   const [assignSelectionToNewCollection, setAssignSelectionToNewCollection] = useState(true)
   const [creatingCollection, setCreatingCollection] = useState(false)
   const [refreshingGroups, setRefreshingGroups] = useState(false)
@@ -199,16 +201,18 @@ export default function RenameManager() {
     '{scene}',
     '{date}',
     '{time}',
+    '{datetime}',
     '{index}',
     '{original}',
     '{width}',
     '{height}',
     '{resolution}',
-    '{duration_s}',
-    '{frame_rate}',
-    '{codec}',
-    '{format}',
-    '{media_type}',
+    '{orientation}',
+    '{file_size}',
+    '{primary_color}',
+    '{mood}',
+    '{project}',
+    '{client}',
   ]
   const quickSymbols = ['_', '-']
 
@@ -982,10 +986,15 @@ export default function RenameManager() {
 
       {/* Template Input */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Naming Template
-        </h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <FileText className="w-5 h-5" />
+            Naming Template
+          </h2>
+          <Button onClick={() => setShowTemplateManager(true)}>
+            Manage Templates
+          </Button>
+        </div>
 
         <div className="space-y-4">
           <div>
@@ -1027,23 +1036,63 @@ export default function RenameManager() {
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-sm font-medium text-blue-900 mb-2">Available Variables:</p>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{description}'}</code> - AI-generated description (slug format)</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{tags}'}</code> - Top AI tags (slug format)</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{scene}'}</code> - Scene type detected by AI</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{date}'}</code> - Current date (YYYYMMDD)</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{time}'}</code> - Current time (HHMMSS)</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{index}'}</code> - Sequential number (001, 002, ...)</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{original}'}</code> - Original filename (without extension)</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{width}'}</code> - Media width in pixels</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{height}'}</code> - Media height in pixels</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{resolution}'}</code> - Width x height (e.g., 1920x1080)</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{duration_s}'}</code> - Duration in seconds</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{frame_rate}'}</code> - Frames per second</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{codec}'}</code> - Codec or compression</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{format}'}</code> - Container or format</li>
-              <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{media_type}'}</code> - Media type (image or video)</li>
-            </ul>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+              <div>
+                <p className="text-xs font-semibold text-blue-900 mb-1">Basic Variables:</p>
+                <ul className="text-sm text-blue-800 space-y-1 mb-3">
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{description}'}</code> - AI description</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{tags}'}</code> - Top AI tags</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{scene}'}</code> - Scene type</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{index}'}</code> - Sequential number</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{original}'}</code> - Original filename</li>
+                </ul>
+
+                <p className="text-xs font-semibold text-blue-900 mb-1">Date/Time Variables:</p>
+                <ul className="text-sm text-blue-800 space-y-1 mb-3">
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{date}'}</code> - Date (YYYYMMDD)</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{time}'}</code> - Time (HHMMSS)</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{datetime}'}</code> - Combined</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{year}'}</code> - Year (YYYY)</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{month}'}</code>, {'{day}'}, {'{hour}'}, etc.</li>
+                </ul>
+
+                <p className="text-xs font-semibold text-blue-900 mb-1">Media Metadata:</p>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{width}'}</code>, {'{height}'}, {'{resolution}'}</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{orientation}'}</code> - portrait/landscape/square</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{duration_s}'}</code>, {'{frame_rate}'}</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{codec}'}</code>, {'{format}'}, {'{media_type}'}</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-blue-900 mb-1">File Metadata:</p>
+                <ul className="text-sm text-blue-800 space-y-1 mb-3">
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{file_size}'}</code> - File size in MB</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{file_size_kb}'}</code> - File size in KB</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{created_date}'}</code> - File creation date</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{modified_date}'}</code> - Last modified</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{extension}'}</code> - File extension</li>
+                </ul>
+
+                <p className="text-xs font-semibold text-blue-900 mb-1">AI Analysis:</p>
+                <ul className="text-sm text-blue-800 space-y-1 mb-3">
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{primary_color}'}</code> - Dominant color</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{dominant_object}'}</code> - Main object</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{mood}'}</code> - Detected mood</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{style}'}</code> - Visual style</li>
+                </ul>
+
+                <p className="text-xs font-semibold text-blue-900 mb-1">Project & Utility:</p>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{project}'}</code>, {'{project_name}'}, {'{client}'}</li>
+                  <li><code className="bg-blue-100 px-2 py-0.5 rounded">{'{random}'}</code>, {'{random4}'}, {'{uuid}'}</li>
+                </ul>
+              </div>
+            </div>
+            <p className="text-xs text-blue-700 mt-2">
+              Click "Manage Templates" to save, organize, and reuse your favorite templates!
+            </p>
           </div>
         </div>
       </div>
@@ -1420,6 +1469,16 @@ export default function RenameManager() {
           />
         </div>
       </Modal>
+
+      {/* Template Manager Modal */}
+      <TemplateManager
+        isOpen={showTemplateManager}
+        onClose={() => setShowTemplateManager(false)}
+        onSelectTemplate={(pattern) => {
+          setTemplate(pattern)
+          setShowTemplateManager(false)
+        }}
+      />
     </div>
   )
 }

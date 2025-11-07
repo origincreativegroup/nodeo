@@ -210,6 +210,10 @@ class Template(Base):
     pattern = Column(String(500), nullable=False)
     description = Column(Text)
     is_default = Column(Boolean, default=False)
+    is_favorite = Column(Boolean, default=False)  # Mark as favorite
+    category = Column(String(50), default='custom')  # basic, portfolio, custom, media, etc.
+    usage_count = Column(Integer, default=0)  # Track usage frequency
+    variables_used = Column(JSON)  # List of variables used in template
 
     # Example: {description}_{date}_{index}
     # Variables: {description}, {tags}, {scene}, {date}, {time}, {index}, {original}
