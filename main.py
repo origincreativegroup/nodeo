@@ -612,11 +612,22 @@ async def batch_analyze_images(
 
 # Template management endpoints
 @app.get("/api/templates")
-async def list_templates(db: AsyncSession = Depends(get_db)):
-    """List all naming templates"""
+async def list_templates(
+    category: Optional[str] = None,
+    favorites_only: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """List all naming templates with optional filtering"""
     from sqlalchemy import select
 
-    result = await db.execute(select(Template))
+    # Build query with filters
+    query = select(Template)
+    if category:
+        query = query.filter(Template.category == category)
+    if favorites_only:
+        query = query.filter(Template.is_favorite == True)
+
+    result = await db.execute(query)
     templates = result.scalars().all()
 
     return {
@@ -626,7 +637,11 @@ async def list_templates(db: AsyncSession = Depends(get_db)):
                 "name": t.name,
                 "pattern": t.pattern,
                 "description": t.description,
-                "is_default": t.is_default
+                "is_default": t.is_default,
+                "is_favorite": t.is_favorite,
+                "category": t.category,
+                "usage_count": t.usage_count,
+                "variables_used": t.variables_used
             }
             for t in templates
         ],
@@ -643,6 +658,8 @@ async def create_template(
     pattern: str,
     description: Optional[str] = None,
     is_default: bool = False,
+    category: str = "custom",
+    is_favorite: bool = False,
     db: AsyncSession = Depends(get_db)
 ):
     """Create new naming template"""
@@ -651,12 +668,20 @@ async def create_template(
     if not is_valid:
         raise HTTPException(status_code=400, detail=message)
 
+    # Extract variables from pattern
+    parser = TemplateParser(pattern)
+    variables_used = parser.variables
+
     # Create template
     template = Template(
         name=name,
         pattern=pattern,
         description=description,
-        is_default=is_default
+        is_default=is_default,
+        is_favorite=is_favorite,
+        category=category,
+        usage_count=0,
+        variables_used=variables_used
     )
 
     db.add(template)
@@ -668,8 +693,208 @@ async def create_template(
         "template": {
             "id": template.id,
             "name": template.name,
-            "pattern": template.pattern
+            "pattern": template.pattern,
+            "description": template.description,
+            "is_favorite": template.is_favorite,
+            "category": template.category,
+            "variables_used": template.variables_used
         }
+    }
+
+
+@app.get("/api/templates/{template_id}")
+async def get_template(template_id: int, db: AsyncSession = Depends(get_db)):
+    """Get a specific template by ID"""
+    from sqlalchemy import select
+
+    result = await db.execute(select(Template).filter(Template.id == template_id))
+    template = result.scalar_one_or_none()
+
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    return {
+        "id": template.id,
+        "name": template.name,
+        "pattern": template.pattern,
+        "description": template.description,
+        "is_default": template.is_default,
+        "is_favorite": template.is_favorite,
+        "category": template.category,
+        "usage_count": template.usage_count,
+        "variables_used": template.variables_used,
+        "created_at": template.created_at,
+        "updated_at": template.updated_at
+    }
+
+
+@app.put("/api/templates/{template_id}")
+async def update_template(
+    template_id: int,
+    name: Optional[str] = None,
+    pattern: Optional[str] = None,
+    description: Optional[str] = None,
+    is_favorite: Optional[bool] = None,
+    category: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update an existing template"""
+    from sqlalchemy import select
+
+    result = await db.execute(select(Template).filter(Template.id == template_id))
+    template = result.scalar_one_or_none()
+
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    # Update fields if provided
+    if name is not None:
+        template.name = name
+    if pattern is not None:
+        # Validate new pattern
+        is_valid, message = TemplateParser.validate_template(pattern)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=message)
+        template.pattern = pattern
+        # Update variables_used
+        parser = TemplateParser(pattern)
+        template.variables_used = parser.variables
+    if description is not None:
+        template.description = description
+    if is_favorite is not None:
+        template.is_favorite = is_favorite
+    if category is not None:
+        template.category = category
+
+    await db.commit()
+    await db.refresh(template)
+
+    return {
+        "success": True,
+        "template": {
+            "id": template.id,
+            "name": template.name,
+            "pattern": template.pattern,
+            "description": template.description,
+            "is_favorite": template.is_favorite,
+            "category": template.category,
+            "variables_used": template.variables_used
+        }
+    }
+
+
+@app.delete("/api/templates/{template_id}")
+async def delete_template(template_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete a template"""
+    from sqlalchemy import select
+
+    result = await db.execute(select(Template).filter(Template.id == template_id))
+    template = result.scalar_one_or_none()
+
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    await db.delete(template)
+    await db.commit()
+
+    return {"success": True, "message": "Template deleted"}
+
+
+@app.post("/api/templates/{template_id}/favorite")
+async def toggle_favorite_template(template_id: int, db: AsyncSession = Depends(get_db)):
+    """Toggle favorite status of a template"""
+    from sqlalchemy import select
+
+    result = await db.execute(select(Template).filter(Template.id == template_id))
+    template = result.scalar_one_or_none()
+
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    template.is_favorite = not template.is_favorite
+    await db.commit()
+    await db.refresh(template)
+
+    return {
+        "success": True,
+        "is_favorite": template.is_favorite
+    }
+
+
+@app.post("/api/templates/import")
+async def import_templates(templates_data: List[dict], db: AsyncSession = Depends(get_db)):
+    """Import multiple templates from JSON"""
+    imported = []
+    errors = []
+
+    for template_data in templates_data:
+        try:
+            # Validate required fields
+            if "name" not in template_data or "pattern" not in template_data:
+                errors.append({"error": "Missing required fields", "data": template_data})
+                continue
+
+            # Validate template pattern
+            is_valid, message = TemplateParser.validate_template(template_data["pattern"])
+            if not is_valid:
+                errors.append({"error": message, "data": template_data})
+                continue
+
+            # Extract variables
+            parser = TemplateParser(template_data["pattern"])
+            variables_used = parser.variables
+
+            # Create template
+            template = Template(
+                name=template_data["name"],
+                pattern=template_data["pattern"],
+                description=template_data.get("description"),
+                is_favorite=template_data.get("is_favorite", False),
+                category=template_data.get("category", "custom"),
+                usage_count=0,
+                variables_used=variables_used
+            )
+
+            db.add(template)
+            imported.append(template_data["name"])
+
+        except Exception as e:
+            errors.append({"error": str(e), "data": template_data})
+
+    if imported:
+        await db.commit()
+
+    return {
+        "success": True,
+        "imported_count": len(imported),
+        "imported": imported,
+        "errors": errors
+    }
+
+
+@app.get("/api/templates/export")
+async def export_templates(db: AsyncSession = Depends(get_db)):
+    """Export all custom templates as JSON"""
+    from sqlalchemy import select
+
+    result = await db.execute(select(Template))
+    templates = result.scalars().all()
+
+    export_data = [
+        {
+            "name": t.name,
+            "pattern": t.pattern,
+            "description": t.description,
+            "category": t.category,
+            "is_favorite": t.is_favorite,
+            "variables_used": t.variables_used
+        }
+        for t in templates
+    ]
+
+    return {
+        "templates": export_data,
+        "count": len(export_data)
     }
 
 
