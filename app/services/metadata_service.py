@@ -38,8 +38,8 @@ class MetadataService:
         raw_response = await self.client.prompt_with_image(
             asset_path,
             prompt,
-            temperature=0.2,
-            num_predict=400,
+            temperature=0.3,  # Slightly higher for more detailed descriptions
+            num_predict=350,  # Optimized - sufficient for structured metadata
         )
 
         metadata = self._parse_structured_response(raw_response)
@@ -121,12 +121,18 @@ class MetadataService:
     def _build_prompt(self, asset_type: AssetType) -> str:
         context = 'image' if asset_type == AssetType.IMAGE else 'video'
         return (
-            "You are an assistant that writes metadata for digital assets. "
-            f"Analyze the provided {context} and respond with JSON using the keys "
-            "title, description, alt_text, tags. The title should be concise (5-8 words). "
-            "The description should be 1-2 sentences suitable for cataloging. Alt text should "
-            "describe the asset for accessibility in a single sentence. Tags must be an array of "
-            "5-8 short lowercase keywords without special characters. Respond with JSON only."
+            "You are a professional digital asset cataloging assistant. "
+            f"Analyze the provided {context} carefully and respond with valid JSON using these exact keys: "
+            "title, description, alt_text, tags.\n\n"
+            "Guidelines:\n"
+            "- title: Concise, descriptive title (5-8 words) that captures the essence of the content\n"
+            "- description: Comprehensive 2-3 sentence description suitable for cataloging and search. "
+            "Include key subjects, composition, setting, and notable visual elements\n"
+            "- alt_text: Clear, accessible description in one sentence for screen readers. "
+            f"Describe what's visible in the {context} objectively\n"
+            "- tags: Array of 6-10 relevant, searchable lowercase keywords. Include: subject matter, "
+            "scene type, visual style, colors, mood, and context. Use single words or short phrases.\n\n"
+            "Respond with valid JSON only, no additional text or markdown."
         )
 
     def _parse_structured_response(self, raw: str) -> Optional[Dict[str, Any]]:
