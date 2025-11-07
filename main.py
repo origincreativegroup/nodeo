@@ -469,6 +469,28 @@ async def analyze_image(
         image.ai_scene = metadata['scene']
         image.analyzed_at = datetime.utcnow()
 
+        # Generate smart filename suggestion
+        try:
+            context = {'date': datetime.now().strftime("%Y%m%d")}
+            suggested_base = await llava_client.generate_filename(
+                image.file_path,
+                metadata=metadata,
+                context=context
+            )
+            from pathlib import Path
+            extension = Path(image.current_filename).suffix
+            from app.services import filename_service
+            suggested_filename = await filename_service.suggest_unique_name(
+                suggested_base,
+                extension,
+                None,  # No folder context
+                db,
+                exclude_image_id=image.id
+            )
+            image.suggested_filename = suggested_filename
+        except Exception as e:
+            logger.warning(f"Failed to generate suggested filename: {e}")
+
         await db.commit()
         await db.refresh(image)
 
@@ -515,6 +537,7 @@ async def analyze_image(
                 "objects": image.ai_objects,
                 "scene": image.ai_scene
             },
+            "suggested_filename": image.suggested_filename,
             "project_classification": project_classification,
         }
 
@@ -559,12 +582,36 @@ async def batch_analyze_images(
             image.ai_scene = metadata['scene']
             image.analyzed_at = datetime.utcnow()
 
+            # Generate smart filename suggestion
+            try:
+                context = {'date': datetime.now().strftime("%Y%m%d")}
+                suggested_base = await llava_client.generate_filename(
+                    image.file_path,
+                    metadata=metadata,
+                    context=context
+                )
+                from pathlib import Path
+                extension = Path(image.current_filename).suffix
+                from app.services import filename_service
+                suggested_filename = await filename_service.suggest_unique_name(
+                    suggested_base,
+                    extension,
+                    None,
+                    db,
+                    exclude_image_id=image.id
+                )
+                image.suggested_filename = suggested_filename
+            except Exception as e:
+                logger.warning(f"Failed to generate suggested filename for {image_id}: {e}")
+                suggested_filename = None
+
             await db.commit()
 
             results.append({
                 "image_id": image_id,
                 "success": True,
-                "analysis": metadata
+                "analysis": metadata,
+                "suggested_filename": suggested_filename
             })
 
         except Exception as e:
