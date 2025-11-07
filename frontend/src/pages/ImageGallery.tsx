@@ -1,18 +1,20 @@
 import { useState } from 'react'
-import { Upload, Sparkles, Trash2, CheckSquare, Square } from 'lucide-react'
+import { Upload, Sparkles, Edit2 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import Button from '../components/Button'
 import LoadingSpinner from '../components/LoadingSpinner'
 import Modal from '../components/Modal'
-import ImageCard from '../components/ImageCard'
+import ImageSelectionPanel from '../components/ImageSelectionPanel'
+import BulkRenameModal, { BulkRenamePattern } from '../components/BulkRenameModal'
 import toast from 'react-hot-toast'
-import { uploadImages, analyzeImage, batchAnalyzeImages } from '../services/api'
+import { uploadImages, analyzeImage, batchAnalyzeImages, bulkRenameFiles } from '../services/api'
 
 export default function ImageGallery() {
-  const { images, addImages, removeImage, updateImage, selectedImageIds, toggleImageSelection, clearSelection, selectAll } = useApp()
+  const { images, addImages, removeImage, updateImage, selectedImageIds, clearSelection } = useApp()
   const [uploading, setUploading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [viewingImage, setViewingImage] = useState<number | null>(null)
+  const [showBulkRenameModal, setShowBulkRenameModal] = useState(false)
 
   const selectedImage = viewingImage !== null ? images.find(img => img.id === viewingImage) : null
 
@@ -133,109 +135,111 @@ export default function ImageGallery() {
     }
   }
 
-  const handleBatchDelete = () => {
-    if (selectedImageIds.length === 0) {
+  const handleBatchDelete = (imageIds: number[]) => {
+    if (imageIds.length === 0) {
       toast.error('No images selected')
       return
     }
 
-    if (confirm(`Delete ${selectedImageIds.length} selected images?`)) {
-      selectedImageIds.forEach(id => removeImage(id))
+    if (confirm(`Delete ${imageIds.length} selected images?`)) {
+      imageIds.forEach(id => removeImage(id))
       clearSelection()
-      toast.success(`Deleted ${selectedImageIds.length} images`)
+      toast.success(`Deleted ${imageIds.length} images`)
     }
   }
 
-  const allSelected = images.length > 0 && selectedImageIds.length === images.length
+  const handleBulkRename = async (pattern: BulkRenamePattern) => {
+    const selectedImages = images.filter(img => selectedImageIds.includes(img.id))
+
+    try {
+      toast.loading(`Renaming ${selectedImages.length} images...`, { id: 'bulk-rename' })
+
+      const response = await bulkRenameFiles(selectedImageIds, pattern)
+
+      response.results.forEach((result) => {
+        if (result.success && result.new_filename) {
+          updateImage(result.image_id, {
+            current_filename: result.new_filename,
+            filename: result.new_filename,
+          })
+        }
+      })
+
+      toast.success(`Successfully renamed ${response.succeeded} of ${response.total} images`, {
+        id: 'bulk-rename',
+      })
+
+      if (response.results.some((r) => !r.success)) {
+        const errors = response.results.filter((r) => !r.success)
+        errors.forEach((err) => {
+          toast.error(`Failed to rename image ${err.image_id}: ${err.error}`)
+        })
+      }
+
+      clearSelection()
+    } catch (error) {
+      console.error('Bulk rename error:', error)
+      toast.error('Error renaming images', { id: 'bulk-rename' })
+    }
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Image Gallery</h1>
-          <p className="text-gray-600 mt-1">
-            {images.length} {images.length === 1 ? 'image' : 'images'}
-            {selectedImageIds.length > 0 && ` · ${selectedImageIds.length} selected`}
-          </p>
-        </div>
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Image Gallery</h1>
+            <p className="text-gray-600 mt-1">
+              {images.length} {images.length === 1 ? 'image' : 'images'}
+              {selectedImageIds.length > 0 && ` · ${selectedImageIds.length} selected`}
+            </p>
+          </div>
 
-        <div className="flex gap-3">
-          {selectedImageIds.length > 0 && (
-            <>
-              <Button
-                variant="danger"
-                icon={<Trash2 className="w-5 h-5" />}
-                onClick={handleBatchDelete}
-              >
-                Delete Selected
-              </Button>
+          <div className="flex gap-3">
+            {selectedImageIds.length > 0 && (
               <Button
                 variant="secondary"
-                onClick={clearSelection}
+                icon={<Edit2 className="w-5 h-5" />}
+                onClick={() => setShowBulkRenameModal(true)}
               >
-                Clear Selection
+                Bulk Rename ({selectedImageIds.length})
               </Button>
-            </>
-          )}
+            )}
 
-          {images.length > 0 && (
-            <Button
-              variant="primary"
-              icon={<Sparkles className="w-5 h-5" />}
-              onClick={handleBatchAnalyze}
-              loading={analyzing}
-              disabled={analyzing}
-            >
-              {selectedImageIds.length > 0 ? 'Analyze Selected' : 'Analyze All'}
-            </Button>
-          )}
+            {images.length > 0 && (
+              <Button
+                variant="primary"
+                icon={<Sparkles className="w-5 h-5" />}
+                onClick={handleBatchAnalyze}
+                loading={analyzing}
+                disabled={analyzing}
+              >
+                {selectedImageIds.length > 0 ? 'Analyze Selected' : 'Analyze All'}
+              </Button>
+            )}
 
-          <label className="relative">
-            <Button
-              variant="primary"
-              icon={<Upload className="w-5 h-5" />}
-              disabled={uploading}
-              loading={uploading}
-            >
-              Upload Images
-            </Button>
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={handleUpload}
-              className="absolute inset-0 opacity-0 cursor-pointer"
-              disabled={uploading}
-            />
-          </label>
+            <label className="relative">
+              <Button
+                variant="primary"
+                icon={<Upload className="w-5 h-5" />}
+                disabled={uploading}
+                loading={uploading}
+              >
+                Upload Images
+              </Button>
+              <input
+                type="file"
+                multiple
+                accept="image/*,video/*"
+                onChange={handleUpload}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+                disabled={uploading}
+              />
+            </label>
+          </div>
         </div>
       </div>
-
-      {/* Batch actions bar */}
-      {images.length > 0 && (
-        <div className="mb-6 flex items-center gap-4 bg-white p-4 rounded-lg shadow">
-          <button
-            onClick={() => allSelected ? clearSelection() : selectAll()}
-            className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
-          >
-            {allSelected ? (
-              <CheckSquare className="w-5 h-5 text-blue-600" />
-            ) : (
-              <Square className="w-5 h-5" />
-            )}
-            <span className="text-sm font-medium">
-              {allSelected ? 'Deselect All' : 'Select All'}
-            </span>
-          </button>
-
-          {selectedImageIds.length > 0 && (
-            <span className="text-sm text-gray-600">
-              {selectedImageIds.length} of {images.length} selected
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Loading state */}
       {uploading && (
@@ -244,7 +248,7 @@ export default function ImageGallery() {
         </div>
       )}
 
-      {/* Image grid */}
+      {/* Image Selection Panel with filters and sorting */}
       {images.length === 0 && !uploading ? (
         <div className="text-center py-16 bg-white rounded-lg shadow">
           <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
@@ -254,19 +258,13 @@ export default function ImageGallery() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {images.map(image => (
-            <ImageCard
-              key={image.id}
-              image={image}
-              isSelected={selectedImageIds.includes(image.id)}
-              onSelect={() => toggleImageSelection(image.id)}
-              onDelete={() => handleDelete(image.id)}
-              onViewDetails={() => setViewingImage(image.id)}
-              onAnalyze={() => handleAnalyzeSingle(image.id)}
-            />
-          ))}
-        </div>
+        <ImageSelectionPanel
+          onDeleteSelected={handleBatchDelete}
+          showActions={true}
+          enableFilters={true}
+          enableSearch={true}
+          enableSorting={true}
+        />
       )}
 
       {/* Image details modal */}
@@ -348,6 +346,14 @@ export default function ImageGallery() {
           </div>
         </Modal>
       )}
+
+      {/* Bulk Rename Modal */}
+      <BulkRenameModal
+        isOpen={showBulkRenameModal}
+        onClose={() => setShowBulkRenameModal(false)}
+        images={images.filter(img => selectedImageIds.includes(img.id))}
+        onApply={handleBulkRename}
+      />
     </div>
   )
 }
