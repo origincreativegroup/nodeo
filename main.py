@@ -610,6 +610,309 @@ async def batch_analyze_images(
     }
 
 
+# Smart Rename endpoints
+class SuggestNameRequest(BaseModel):
+    """Request for smart name suggestion"""
+    folder_id: Optional[int] = None
+    context: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+@app.post("/api/images/{image_id}/suggest-name")
+async def suggest_smart_name(
+    image_id: int,
+    request: SuggestNameRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate LLaVA-powered smart filename suggestion"""
+    try:
+        # Load image from database
+        stmt = select(Image).where(Image.id == image_id)
+        result = await db.execute(stmt)
+        image = result.scalar_one_or_none()
+
+        if not image:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        # Build metadata dict from AI analysis
+        metadata = {
+            'description': image.ai_description or '',
+            'tags': image.ai_tags or [],
+            'objects': image.ai_objects or [],
+            'scene': image.ai_scene or '',
+        }
+
+        # Check if image has been analyzed
+        if not image.ai_description:
+            return {
+                "success": False,
+                "error": "Image not analyzed yet",
+                "requires_analysis": True
+            }
+
+        # Build context for filename generation
+        from datetime import datetime
+        context = request.context or {}
+        context['date'] = datetime.now().strftime("%Y%m%d")
+
+        # If folder_id provided, get folder context
+        if request.folder_id:
+            folder_stmt = select(ImageGroup).where(ImageGroup.id == request.folder_id)
+            folder_result = await db.execute(folder_stmt)
+            folder = folder_result.scalar_one_or_none()
+
+            if folder:
+                context['folder_type'] = folder.group_type.value
+                context['folder_name'] = folder.name
+
+                # Add project context if applicable
+                if folder.project_id:
+                    project_stmt = select(Project).where(Project.id == folder.project_id)
+                    project_result = await db.execute(project_stmt)
+                    project = project_result.scalar_one_or_none()
+                    if project:
+                        context['project_name'] = project.name
+
+        # Generate smart filename
+        suggested_base = await llava_client.generate_filename(
+            image.file_path,
+            metadata=metadata,
+            context=context
+        )
+
+        # Get file extension
+        from pathlib import Path
+        extension = Path(image.current_filename).suffix
+
+        # Check for conflicts and ensure uniqueness
+        from app.services import filename_service
+        suggested_filename = await filename_service.suggest_unique_name(
+            suggested_base,
+            extension,
+            request.folder_id,
+            db,
+            exclude_image_id=image_id
+        )
+
+        # Update image with suggested filename
+        image.suggested_filename = suggested_filename
+        await db.commit()
+
+        return {
+            "success": True,
+            "suggested_filename": suggested_filename,
+            "current_filename": image.current_filename,
+            "metadata_used": metadata
+        }
+
+    except Exception as e:
+        logger.error(f"Error suggesting name for image {image_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BatchSuggestNamesRequest(BaseModel):
+    """Request for batch name suggestions"""
+    image_ids: List[int]
+    folder_id: Optional[int] = None
+    context: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+@app.post("/api/images/batch-suggest-names")
+async def batch_suggest_names(
+    request: BatchSuggestNamesRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate smart name suggestions for multiple images concurrently"""
+    try:
+        from datetime import datetime
+        import asyncio
+
+        # Load all images
+        stmt = select(Image).where(Image.id.in_(request.image_ids))
+        result = await db.execute(stmt)
+        images = result.scalars().all()
+
+        if not images:
+            raise HTTPException(status_code=404, detail="No images found")
+
+        # Get folder context if provided
+        folder_context = {}
+        if request.folder_id:
+            folder_stmt = select(ImageGroup).where(ImageGroup.id == request.folder_id)
+            folder_result = await db.execute(folder_stmt)
+            folder = folder_result.scalar_one_or_none()
+
+            if folder:
+                folder_context['folder_type'] = folder.group_type.value
+                folder_context['folder_name'] = folder.name
+
+                if folder.project_id:
+                    project_stmt = select(Project).where(Project.id == folder.project_id)
+                    project_result = await db.execute(project_stmt)
+                    project = project_result.scalar_one_or_none()
+                    if project:
+                        folder_context['project_name'] = project.name
+
+        # Generate suggestions concurrently
+        suggestions = []
+
+        async def generate_suggestion(image: Image, index: int):
+            try:
+                # Skip if not analyzed
+                if not image.ai_description:
+                    return {
+                        "image_id": image.id,
+                        "success": False,
+                        "error": "Not analyzed",
+                        "requires_analysis": True
+                    }
+
+                metadata = {
+                    'description': image.ai_description or '',
+                    'tags': image.ai_tags or [],
+                    'objects': image.ai_objects or [],
+                    'scene': image.ai_scene or '',
+                }
+
+                context = {**folder_context, **request.context}
+                context['date'] = datetime.now().strftime("%Y%m%d")
+                context['index'] = index + 1
+
+                suggested_base = await llava_client.generate_filename(
+                    image.file_path,
+                    metadata=metadata,
+                    context=context
+                )
+
+                from pathlib import Path
+                extension = Path(image.current_filename).suffix
+
+                from app.services import filename_service
+                suggested_filename = await filename_service.suggest_unique_name(
+                    suggested_base,
+                    extension,
+                    request.folder_id,
+                    db,
+                    exclude_image_id=image.id
+                )
+
+                # Update image
+                image.suggested_filename = suggested_filename
+
+                return {
+                    "image_id": image.id,
+                    "success": True,
+                    "suggested_filename": suggested_filename,
+                    "current_filename": image.current_filename
+                }
+
+            except Exception as e:
+                logger.error(f"Error generating suggestion for image {image.id}: {e}")
+                return {
+                    "image_id": image.id,
+                    "success": False,
+                    "error": str(e)
+                }
+
+        # Process with semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(5)
+
+        async def process_with_limit(img, idx):
+            async with semaphore:
+                return await generate_suggestion(img, idx)
+
+        suggestions = await asyncio.gather(
+            *[process_with_limit(img, i) for i, img in enumerate(images)]
+        )
+
+        await db.commit()
+
+        return {
+            "success": True,
+            "total": len(request.image_ids),
+            "suggestions": suggestions
+        }
+
+    except Exception as e:
+        logger.error(f"Error in batch suggest names: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class QuickRenameRequest(BaseModel):
+    """Request for quick rename"""
+    new_filename: str
+
+
+@app.post("/api/images/{image_id}/quick-rename")
+async def quick_rename_image(
+    image_id: int,
+    request: QuickRenameRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Quick rename with automatic backup"""
+    try:
+        from pathlib import Path
+        import shutil
+
+        # Load image
+        stmt = select(Image).where(Image.id == image_id)
+        result = await db.execute(stmt)
+        image = result.scalar_one_or_none()
+
+        if not image:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        # Sanitize new filename
+        from app.services import filename_service
+        new_filename = filename_service.sanitize_filename(request.new_filename)
+
+        # Get current file paths
+        old_path = Path(image.file_path)
+        new_path = old_path.parent / new_filename
+
+        # Check if file already exists
+        if new_path.exists() and new_path != old_path:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File {new_filename} already exists"
+            )
+
+        # Create backup
+        backup_path = old_path.parent / f".backup_{old_path.name}"
+        shutil.copy2(old_path, backup_path)
+
+        try:
+            # Rename file on disk
+            old_path.rename(new_path)
+
+            # Update database
+            image.current_filename = new_filename
+            image.file_path = str(new_path)
+            image.filename_accepted = (new_filename == image.suggested_filename)
+            image.last_renamed_at = datetime.now()
+
+            await db.commit()
+
+            # Remove backup on success
+            backup_path.unlink()
+
+            return {
+                "success": True,
+                "new_filename": new_filename,
+                "old_filename": image.current_filename
+            }
+
+        except Exception as e:
+            # Restore from backup on error
+            if backup_path.exists():
+                shutil.copy2(backup_path, old_path)
+                backup_path.unlink()
+            raise e
+
+    except Exception as e:
+        logger.error(f"Error in quick rename for image {image_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Template management endpoints
 @app.get("/api/templates")
 async def list_templates(
@@ -1024,6 +1327,313 @@ async def assign_group_images(
     persisted_group = refreshed.scalar_one()
 
     return {"success": True, "group": serialize_group(persisted_group)}
+
+
+# Folder Management endpoints (unified folder API for groups)
+@app.get("/api/folders")
+async def list_folders(
+    include_children: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """List all folders/groups with optional hierarchy"""
+    try:
+        stmt = select(ImageGroup).options(selectinload(ImageGroup.assignments))
+
+        result = await db.execute(stmt)
+        groups = result.scalars().all()
+
+        # Build folder tree if include_children
+        folders = []
+        for group in groups:
+            folder_dict = serialize_group(group)
+
+            # Add hierarchy info
+            folder_dict['parent_id'] = group.parent_id
+            folder_dict['sort_order'] = group.sort_order
+
+            # Get children if requested
+            if include_children:
+                children_stmt = select(ImageGroup).where(
+                    ImageGroup.parent_id == group.id
+                ).options(selectinload(ImageGroup.assignments))
+
+                children_result = await db.execute(children_stmt)
+                children = children_result.scalars().all()
+
+                folder_dict['children'] = [
+                    {
+                        **serialize_group(child),
+                        'parent_id': child.parent_id,
+                        'sort_order': child.sort_order
+                    }
+                    for child in children
+                ]
+            else:
+                folder_dict['children'] = []
+
+            folders.append(folder_dict)
+
+        return {"folders": folders}
+
+    except Exception as e:
+        logger.error(f"Error listing folders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CreateFolderRequest(BaseModel):
+    """Request to create a new folder"""
+    name: str
+    description: Optional[str] = None
+    parent_id: Optional[int] = None
+    image_ids: Optional[List[int]] = Field(default_factory=list)
+
+
+@app.post("/api/folders")
+async def create_folder(
+    request: CreateFolderRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new manual folder/collection"""
+    try:
+        # Create new ImageGroup as manual collection
+        folder = ImageGroup(
+            name=request.name,
+            description=request.description,
+            group_type=GroupType.MANUAL_COLLECTION,
+            is_user_defined=True,
+            parent_id=request.parent_id,
+            sort_order=0,
+            attributes={}
+        )
+
+        db.add(folder)
+        await db.flush()  # Get the ID
+
+        # Add images if provided
+        if request.image_ids:
+            service = GroupingService(db)
+            await service.assign_images_to_group(
+                folder.id,
+                request.image_ids,
+                replace=False
+            )
+
+        await db.commit()
+        await db.refresh(folder)
+
+        # Load with assignments
+        stmt = (
+            select(ImageGroup)
+            .options(selectinload(ImageGroup.assignments))
+            .where(ImageGroup.id == folder.id)
+        )
+        result = await db.execute(stmt)
+        persisted = result.scalar_one()
+
+        return {
+            "success": True,
+            "folder": {
+                **serialize_group(persisted),
+                'parent_id': persisted.parent_id,
+                'sort_order': persisted.sort_order
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error creating folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class UpdateFolderRequest(BaseModel):
+    """Request to update a folder"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    parent_id: Optional[int] = None
+    sort_order: Optional[int] = None
+
+
+@app.put("/api/folders/{folder_id}")
+async def update_folder(
+    folder_id: int,
+    request: UpdateFolderRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update folder name, description, or hierarchy"""
+    try:
+        stmt = select(ImageGroup).where(ImageGroup.id == folder_id)
+        result = await db.execute(stmt)
+        folder = result.scalar_one_or_none()
+
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+        # Only allow updating manual collections
+        if folder.group_type != GroupType.MANUAL_COLLECTION:
+            raise HTTPException(
+                status_code=400,
+                detail="Can only update manual folders"
+            )
+
+        # Update fields
+        if request.name is not None:
+            folder.name = request.name
+        if request.description is not None:
+            folder.description = request.description
+        if request.parent_id is not None:
+            # Prevent circular references
+            if request.parent_id == folder_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Folder cannot be its own parent"
+                )
+            folder.parent_id = request.parent_id
+        if request.sort_order is not None:
+            folder.sort_order = request.sort_order
+
+        await db.commit()
+        await db.refresh(folder)
+
+        return {
+            "success": True,
+            "folder": {
+                **serialize_group(folder),
+                'parent_id': folder.parent_id,
+                'sort_order': folder.sort_order
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating folder {folder_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/folders/{folder_id}")
+async def delete_folder(
+    folder_id: int,
+    delete_children: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a folder/group"""
+    try:
+        stmt = select(ImageGroup).where(ImageGroup.id == folder_id)
+        result = await db.execute(stmt)
+        folder = result.scalar_one_or_none()
+
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+        # Only allow deleting manual collections
+        if folder.group_type != GroupType.MANUAL_COLLECTION:
+            raise HTTPException(
+                status_code=400,
+                detail="Can only delete manual folders"
+            )
+
+        # Check for children
+        if not delete_children:
+            children_stmt = select(ImageGroup).where(
+                ImageGroup.parent_id == folder_id
+            )
+            children_result = await db.execute(children_stmt)
+            children = children_result.scalars().all()
+
+            if children:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Folder has {len(children)} subfolders. Set delete_children=true to delete them."
+                )
+
+        # Delete folder (cascade will handle children and associations)
+        await db.delete(folder)
+        await db.commit()
+
+        return {"success": True, "message": f"Folder {folder_id} deleted"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting folder {folder_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AddImagesToFolderRequest(BaseModel):
+    """Request to add images to a folder"""
+    image_ids: List[int]
+
+
+@app.post("/api/folders/{folder_id}/images")
+async def add_images_to_folder(
+    folder_id: int,
+    request: AddImagesToFolderRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Add images to a folder"""
+    try:
+        stmt = select(ImageGroup).where(ImageGroup.id == folder_id)
+        result = await db.execute(stmt)
+        folder = result.scalar_one_or_none()
+
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+        service = GroupingService(db)
+        await service.assign_images_to_group(
+            folder_id,
+            request.image_ids,
+            replace=False
+        )
+        await db.commit()
+
+        return {
+            "success": True,
+            "added": len(request.image_ids),
+            "folder_id": folder_id
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding images to folder {folder_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/folders/{folder_id}/images/{image_id}")
+async def remove_image_from_folder(
+    folder_id: int,
+    image_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove a specific image from a folder"""
+    try:
+        # Find association
+        stmt = select(ImageGroupAssociation).where(
+            ImageGroupAssociation.group_id == folder_id,
+            ImageGroupAssociation.image_id == image_id
+        )
+        result = await db.execute(stmt)
+        association = result.scalar_one_or_none()
+
+        if not association:
+            raise HTTPException(
+                status_code=404,
+                detail="Image not in this folder"
+            )
+
+        await db.delete(association)
+        await db.commit()
+
+        return {
+            "success": True,
+            "message": f"Image {image_id} removed from folder {folder_id}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error removing image from folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.patch("/api/images/bulk/tags")

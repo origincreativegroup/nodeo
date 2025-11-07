@@ -282,4 +282,92 @@ export const uploadToR2 = async (imageId: number, key: string) => {
   return response.data
 }
 
+// Smart Rename operations
+export const suggestSmartName = async (
+  imageId: number,
+  folderId?: number,
+  context?: Record<string, any>
+) => {
+  const response = await api.post(`/images/${imageId}/suggest-name`, {
+    folder_id: folderId,
+    context: context || {},
+  })
+  return response.data
+}
+
+export const batchSuggestNames = async (
+  imageIds: number[],
+  folderId?: number,
+  context?: Record<string, any>
+) => {
+  const response = await api.post('/images/batch-suggest-names', {
+    image_ids: imageIds,
+    folder_id: folderId,
+    context: context || {},
+  })
+  return response.data
+}
+
+export const quickRenameImage = async (imageId: number, newFilename: string) => {
+  const response = await api.post(`/images/${imageId}/quick-rename`, {
+    new_filename: newFilename,
+  })
+  return response.data
+}
+
+// Folder operations
+export const listFolders = async (includeChildren: boolean = true) => {
+  const response = await api.get('/folders', {
+    params: { include_children: includeChildren },
+  })
+  return response.data
+}
+
+export const createFolder = async (
+  name: string,
+  description?: string,
+  parentId?: number,
+  imageIds?: number[]
+) => {
+  const response = await api.post('/folders', {
+    name,
+    description,
+    parent_id: parentId,
+    image_ids: imageIds || [],
+  })
+  return response.data
+}
+
+export const updateFolder = async (
+  folderId: number,
+  updates: {
+    name?: string
+    description?: string
+    parent_id?: number
+    sort_order?: number
+  }
+) => {
+  const response = await api.put(`/folders/${folderId}`, updates)
+  return response.data
+}
+
+export const deleteFolder = async (folderId: number, deleteChildren: boolean = false) => {
+  const response = await api.delete(`/folders/${folderId}`, {
+    params: { delete_children: deleteChildren },
+  })
+  return response.data
+}
+
+export const addImagesToFolder = async (folderId: number, imageIds: number[]) => {
+  const response = await api.post(`/folders/${folderId}/images`, {
+    image_ids: imageIds,
+  })
+  return response.data
+}
+
+export const removeImageFromFolder = async (folderId: number, imageId: number) => {
+  const response = await api.delete(`/folders/${folderId}/images/${imageId}`)
+  return response.data
+}
+
 export default api

@@ -337,46 +337,95 @@ Respond with valid JSON only, no additional text."""
     async def generate_filename(
         self,
         image_path: str,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        context: Optional[Dict] = None
     ) -> str:
         """
-        Generate a descriptive filename based on image content
+        Generate a descriptive filename based on image content with context awareness
 
         Args:
             image_path: Path to image
             metadata: Pre-analyzed metadata (optional)
+            context: Additional context (project, folder, scene cluster, etc.)
 
         Returns:
             Suggested filename (without extension)
+
+        Context structure:
+            {
+                'project_name': str,        # Portfolio project name
+                'folder_type': str,         # 'project', 'scene', 'tag', 'manual'
+                'folder_name': str,         # Current folder context
+                'scene_type': str,          # Scene cluster type
+                'date': str,                # Date for temporal naming (YYYYMMDD)
+                'index': int,               # Sequential index in batch
+            }
         """
         try:
             if not metadata:
                 metadata = await self.extract_metadata(image_path)
 
-            # Use LLaVA to create a concise filename
-            client = ollama.Client(host=self.host)
+            context = context or {}
 
-            prompt = f"""Based on this image description: "{metadata.get('description', '')}"
-And these tags: {', '.join(metadata.get('tags', [])[:5])}
+            # Build context-aware filename strategy
+            description = metadata.get('description', '')
+            tags = metadata.get('tags', [])[:5]
+            scene = metadata.get('scene', '')
 
-Generate a short, descriptive filename (3-5 words, lowercase, use underscores).
-Only respond with the filename, nothing else."""
+            # Extract key terms from description (remove stop words)
+            stop_words = {'the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'for', 'with', 'this', 'that', 'is', 'are'}
+            description_words = [w.lower() for w in description.split() if w.lower() not in stop_words and len(w) > 2]
+            key_terms = description_words[:4]  # First 4 meaningful words
 
-            response = client.chat(
-                model=self.model,
-                messages=[{
-                    'role': 'user',
-                    'content': prompt,
-                    'images': [image_path]
-                }],
-                options={'temperature': 0.5}
-            )
+            # Determine naming strategy based on context
+            if context.get('folder_type') == 'project' and context.get('project_name'):
+                # Project-based naming: {project}_{description}_{index}
+                project_slug = context['project_name'].lower().replace(' ', '_')
+                desc_part = '_'.join(key_terms[:2]) if key_terms else '_'.join(tags[:2])
+                index = context.get('index', 1)
+                filename = f"{project_slug}_{desc_part}_{index:03d}"
 
-            filename = response['message']['content'].strip()
-            # Clean filename
+            elif context.get('folder_type') == 'scene' and scene:
+                # Scene-based naming: {scene}_{description}_{date}
+                scene_slug = scene.lower().replace(' ', '_')
+                desc_part = '_'.join(key_terms[:3]) if key_terms else '_'.join(tags[:2])
+                date_part = context.get('date', '')
+                if date_part:
+                    filename = f"{scene_slug}_{desc_part}_{date_part}"
+                else:
+                    filename = f"{scene_slug}_{desc_part}"
+
+            elif context.get('folder_type') == 'tag' and tags:
+                # Tag-based naming: {primary_tag}_{description}
+                primary_tag = tags[0].lower().replace(' ', '_')
+                desc_part = '_'.join(key_terms[:3]) if key_terms else '_'.join(tags[1:3])
+                filename = f"{primary_tag}_{desc_part}"
+
+            else:
+                # Default: {description}_{date}_{hash_short}
+                desc_part = '_'.join(key_terms[:4]) if key_terms else '_'.join(tags[:3])
+                date_part = context.get('date', '')
+
+                if date_part:
+                    # Add short hash for uniqueness
+                    import hashlib
+                    hash_short = hashlib.md5(description.encode()).hexdigest()[:6]
+                    filename = f"{desc_part}_{date_part}_{hash_short}"
+                else:
+                    filename = desc_part
+
+            # Clean and validate filename
             filename = filename.lower().replace(' ', '_').replace('-', '_')
             # Remove any non-alphanumeric except underscores
             filename = ''.join(c for c in filename if c.isalnum() or c == '_')
+
+            # Ensure not too long (max 50 chars before extension)
+            if len(filename) > 50:
+                filename = filename[:50]
+
+            # Ensure not empty
+            if not filename:
+                filename = 'unnamed_image'
 
             return filename
 

@@ -55,6 +55,10 @@ export interface ImageData {
   groups?: ImageGroupRef[]
   upload_batch?: UploadBatchRef | null
   metadata_sidecar_exists?: boolean
+  // Smart Rename fields
+  suggested_filename?: string
+  filename_accepted?: boolean
+  last_renamed_at?: string
 }
 
 export interface Settings {
