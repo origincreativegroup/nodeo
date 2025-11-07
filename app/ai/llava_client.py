@@ -12,6 +12,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Video file extensions
+VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'}
+
 
 class LLaVAClient:
     """Client for LLaVA vision model via Ollama"""
@@ -26,6 +29,10 @@ class LLaVAClient:
         self.model = model or settings.ollama_model
         self.timeout = timeout or settings.ollama_timeout
 
+    def _is_video(self, file_path: str) -> bool:
+        """Check if file is a video based on extension."""
+        return Path(file_path).suffix.lower() in VIDEO_EXTENSIONS
+
     def _encode_image(self, image_path: str) -> str:
         """Encode image to base64 string"""
         with open(image_path, "rb") as f:
@@ -39,8 +46,56 @@ class LLaVAClient:
         temperature: float = 0.3,
         num_predict: int = 256,
     ) -> str:
-        """Send a custom prompt alongside an image and return the raw response."""
+        """Send a custom prompt alongside an image or video and return the raw response.
+
+        For videos, extracts frames and analyzes the middle frame.
+        """
         try:
+            # Handle videos by extracting frames
+            if self._is_video(image_path):
+                from app.services.video_frame_extractor import video_frame_extractor
+
+                frame_paths = []
+                try:
+                    logger.info(f"Extracting frames from video for prompt: {image_path}")
+                    frame_paths = await video_frame_extractor.extract_frames(image_path)
+
+                    if not frame_paths:
+                        raise RuntimeError(f"Failed to extract frames from video: {image_path}")
+
+                    # Use the middle frame for analysis
+                    middle_frame = frame_paths[len(frame_paths) // 2]
+                    logger.info(f"Using frame {middle_frame} for video analysis")
+
+                    # Update prompt to indicate it's a video
+                    video_prompt = f"{prompt}\n\nNote: This is a frame extracted from a video."
+
+                    client = ollama.Client(host=self.host)
+                    response = client.chat(
+                        model=self.model,
+                        messages=[
+                            {
+                                'role': 'user',
+                                'content': video_prompt,
+                                'images': [str(middle_frame)],
+                            }
+                        ],
+                        options={
+                            'temperature': temperature,
+                            'num_predict': num_predict,
+                        },
+                    )
+                    return response['message']['content'].strip()
+
+                finally:
+                    # Cleanup frames
+                    if frame_paths:
+                        try:
+                            await video_frame_extractor.cleanup_frames(frame_paths)
+                        except Exception as e:
+                            logger.warning(f"Failed to cleanup frames: {e}")
+
+            # Handle images normally
             client = ollama.Client(host=self.host)
             response = client.chat(
                 model=self.model,
@@ -68,10 +123,10 @@ class LLaVAClient:
         detailed: bool = False
     ) -> str:
         """
-        Analyze an image using LLaVA with improved prompts
+        Analyze an image or video using LLaVA with improved prompts
 
         Args:
-            image_path: Path to the image file
+            image_path: Path to the image or video file
             prompt: Custom prompt for analysis (optional)
             detailed: If True, use a more detailed analysis prompt
 
@@ -79,15 +134,26 @@ class LLaVAClient:
             Analysis text from LLaVA
         """
         try:
-            logger.info(f"Analyzing image: {image_path}")
-
-            # Create client with custom host
-            client = ollama.Client(host=self.host)
+            is_video = self._is_video(image_path)
+            media_type = "video" if is_video else "image"
+            logger.info(f"Analyzing {media_type}: {image_path}")
 
             # Use enhanced default prompt if none provided
             if prompt is None:
                 if detailed:
-                    prompt = """Provide a comprehensive analysis of this image:
+                    if is_video:
+                        prompt = f"""Provide a comprehensive analysis of this video:
+
+1. Main Subject: What is the primary focus or subject?
+2. Action/Content: What's happening in the video?
+3. Visual Elements: Key objects, people, or elements visible
+4. Setting/Scene: Where does this appear to be? What's the context?
+5. Colors and Lighting: Dominant colors, lighting conditions, mood
+6. Notable Details: Any interesting or distinctive features
+
+Be specific and descriptive."""
+                    else:
+                        prompt = """Provide a comprehensive analysis of this image:
 
 1. Main Subject: What is the primary focus or subject?
 2. Composition: How is the image composed? (framing, perspective, layout)
@@ -98,7 +164,16 @@ class LLaVAClient:
 
 Be specific and descriptive."""
                 else:
-                    prompt = """Analyze this image and describe:
+                    if is_video:
+                        prompt = """Analyze this video and describe:
+- What you see (main subjects and action)
+- The scene type and setting
+- Notable visual characteristics
+- The overall composition and mood
+
+Provide a clear, detailed description in 2-3 sentences."""
+                    else:
+                        prompt = """Analyze this image and describe:
 - What you see (main subjects and objects)
 - The scene type and setting
 - Notable visual characteristics
@@ -106,36 +181,28 @@ Be specific and descriptive."""
 
 Provide a clear, detailed description in 2-3 sentences."""
 
-            # Make request with image
-            response = client.chat(
-                model=self.model,
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': prompt,
-                        'images': [image_path]
-                    }
-                ],
-                options={
-                    'temperature': 0.5,  # Reduced from 0.7 for more consistent results
-                    'num_predict': 300 if detailed else 200,
-                }
+            # Use prompt_with_image which handles both images and videos
+            num_predict = 300 if detailed else 200
+            analysis = await self.prompt_with_image(
+                image_path,
+                prompt,
+                temperature=0.5,
+                num_predict=num_predict
             )
 
-            analysis = response['message']['content'].strip()
             logger.info(f"Analysis completed: {len(analysis)} chars")
             return analysis
 
         except Exception as e:
-            logger.error(f"Error analyzing image {image_path}: {e}")
+            logger.error(f"Error analyzing {media_type if 'media_type' in locals() else 'media'} {image_path}: {e}")
             raise
 
     async def extract_metadata(self, image_path: str, use_fast: bool = True) -> Dict:
         """
-        Extract structured metadata from image
+        Extract structured metadata from image or video
 
         Args:
-            image_path: Path to the image file
+            image_path: Path to the image or video file
             use_fast: If True, use optimized single-call method (default).
                      If False, use legacy 4-call method.
 
@@ -147,6 +214,11 @@ Provide a clear, detailed description in 2-3 sentences."""
                 'scene': str
             }
         """
+        # Handle videos by extracting frames
+        if self._is_video(image_path):
+            return await self._extract_metadata_from_video(image_path, use_fast=use_fast)
+
+        # Handle images
         if use_fast:
             return await self._extract_metadata_fast(image_path)
         else:
@@ -333,6 +405,173 @@ Respond with valid JSON only, no additional text."""
         except Exception as e:
             logger.error(f"Error extracting metadata from {image_path}: {e}")
             raise
+
+    async def _extract_metadata_from_video(self, video_path: str, use_fast: bool = True) -> Dict:
+        """
+        Extract metadata from video by analyzing extracted frames.
+
+        Args:
+            video_path: Path to the video file
+            use_fast: Whether to use fast extraction method
+
+        Returns:
+            Aggregated metadata from video frames
+        """
+        from app.services.video_frame_extractor import video_frame_extractor
+
+        frame_paths = []
+        try:
+            # Extract frames from video
+            logger.info(f"Extracting frames from video: {video_path}")
+            frame_paths = await video_frame_extractor.extract_frames(video_path)
+
+            if not frame_paths:
+                logger.error(f"No frames extracted from video: {video_path}")
+                raise RuntimeError(f"Failed to extract frames from video: {video_path}")
+
+            logger.info(f"Analyzing {len(frame_paths)} frames from video: {video_path}")
+
+            # Analyze each frame
+            frame_metadata_list = []
+            for frame_path in frame_paths:
+                try:
+                    if use_fast:
+                        metadata = await self._extract_metadata_fast(str(frame_path))
+                    else:
+                        metadata = await self._extract_metadata_legacy(str(frame_path))
+                    frame_metadata_list.append(metadata)
+                except Exception as e:
+                    logger.warning(f"Failed to analyze frame {frame_path}: {e}")
+                    continue
+
+            if not frame_metadata_list:
+                raise RuntimeError(f"Failed to analyze any frames from video: {video_path}")
+
+            # Aggregate metadata from all frames
+            aggregated = self._aggregate_video_metadata(frame_metadata_list)
+            logger.info(f"Successfully analyzed video: {video_path}")
+            return aggregated
+
+        finally:
+            # Cleanup extracted frames
+            if frame_paths:
+                try:
+                    await video_frame_extractor.cleanup_frames(frame_paths)
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup frames: {e}")
+
+    def _aggregate_video_metadata(self, frame_metadata_list: List[Dict]) -> Dict:
+        """
+        Aggregate metadata from multiple video frames into a single result.
+
+        Args:
+            frame_metadata_list: List of metadata dicts from individual frames
+
+        Returns:
+            Aggregated metadata
+        """
+        if not frame_metadata_list:
+            return {
+                'description': '',
+                'tags': [],
+                'objects': [],
+                'scene': ''
+            }
+
+        # Collect all descriptions and create a comprehensive one
+        descriptions = [m.get('description', '') for m in frame_metadata_list if m.get('description')]
+
+        # If we have multiple descriptions, combine them
+        if len(descriptions) > 1:
+            # Create a video-specific description mentioning it's from multiple scenes
+            description = f"Video showing {descriptions[0]}"
+            # Add variety if descriptions are different
+            if len(set(descriptions)) > 1:
+                description += f". The video transitions through scenes including {', '.join(descriptions[1:])}"
+        elif descriptions:
+            description = f"Video of {descriptions[0]}"
+        else:
+            description = "Video content"
+
+        # Aggregate tags (merge and deduplicate)
+        all_tags = []
+        for metadata in frame_metadata_list:
+            tags = metadata.get('tags', [])
+            if isinstance(tags, list):
+                all_tags.extend(tags)
+
+        # Count tag occurrences and sort by frequency
+        tag_counts = {}
+        for tag in all_tags:
+            tag_lower = str(tag).lower().strip()
+            if tag_lower:
+                tag_counts[tag_lower] = tag_counts.get(tag_lower, 0) + 1
+
+        # Keep top tags that appear most frequently
+        sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)
+        aggregated_tags = [tag for tag, count in sorted_tags[:10]]
+
+        # Add 'video' tag if not present
+        if 'video' not in aggregated_tags:
+            aggregated_tags.insert(0, 'video')
+
+        # Aggregate objects (similar to tags)
+        all_objects = []
+        for metadata in frame_metadata_list:
+            objects = metadata.get('objects', [])
+            if isinstance(objects, list):
+                all_objects.extend(objects)
+
+        object_counts = {}
+        for obj in all_objects:
+            obj_lower = str(obj).lower().strip()
+            if obj_lower:
+                object_counts[obj_lower] = object_counts.get(obj_lower, 0) + 1
+
+        sorted_objects = sorted(object_counts.items(), key=lambda x: x[1], reverse=True)
+        aggregated_objects = [obj for obj, count in sorted_objects[:10]]
+
+        # Determine scene - use most common scene or combine
+        scenes = [m.get('scene', '').lower() for m in frame_metadata_list if m.get('scene')]
+        if scenes:
+            # Use most common scene
+            scene_counts = {}
+            for s in scenes:
+                scene_counts[s] = scene_counts.get(s, 0) + 1
+            scene = max(scene_counts.items(), key=lambda x: x[1])[0]
+        else:
+            scene = 'video'
+
+        # Aggregate colors and mood if present
+        result = {
+            'description': description[:500],  # Limit description length
+            'tags': aggregated_tags,
+            'objects': aggregated_objects,
+            'scene': scene
+        }
+
+        # Add optional fields if they exist
+        all_moods = [m.get('mood', '') for m in frame_metadata_list if m.get('mood')]
+        if all_moods:
+            result['mood'] = all_moods[0]  # Use first mood
+
+        all_colors = []
+        for metadata in frame_metadata_list:
+            colors = metadata.get('colors', [])
+            if isinstance(colors, list):
+                all_colors.extend(colors)
+        if all_colors:
+            # Deduplicate colors while preserving order
+            seen = set()
+            unique_colors = []
+            for color in all_colors:
+                color_lower = str(color).lower()
+                if color_lower not in seen:
+                    seen.add(color_lower)
+                    unique_colors.append(color)
+            result['colors'] = unique_colors[:5]
+
+        return result
 
     async def generate_filename(
         self,
