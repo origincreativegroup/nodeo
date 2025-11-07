@@ -41,6 +41,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY main.py .
 
+# Copy database migration files
+COPY migrations/ ./migrations/
+COPY alembic.ini .
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh .
+RUN chmod +x docker-entrypoint.sh
+
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/frontend/dist ./static
 
@@ -54,5 +62,5 @@ EXPOSE 8002
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8002/health || exit 1
 
-# Run application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
+# Run entrypoint script (which runs migrations then starts app)
+CMD ["./docker-entrypoint.sh"]

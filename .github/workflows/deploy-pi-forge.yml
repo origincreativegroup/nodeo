@@ -60,6 +60,15 @@ jobs:
           echo "Waiting for application to start..."
           sleep 15
 
+      - name: Verify migrations
+        run: |
+          # Check migration logs
+          echo "Checking migration status..."
+          docker compose -f /home/admin/jspow/docker-compose.yml logs jspow-app | grep -i "migrations"
+
+          # Verify alembic_version table exists
+          docker exec jspow-postgres psql -U postgres -d jspow -c "SELECT version_num FROM alembic_version;" || echo "Note: alembic_version table may not exist yet"
+
       - name: Health check
         run: |
           # Check if application is responding
