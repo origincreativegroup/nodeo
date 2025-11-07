@@ -152,11 +152,6 @@ class Image(Base):
     ai_embedding = Column(JSON)  # Vector embedding for similarity clustering
     analyzed_at = Column(DateTime(timezone=True))
 
-    # Smart Rename Tracking
-    suggested_filename = Column(String(500))  # LLaVA-generated filename suggestion
-    filename_accepted = Column(Boolean, default=False)  # User accepted suggestion
-    last_renamed_at = Column(DateTime(timezone=True))  # Last rename timestamp
-
     # Storage
     storage_type = Column(SQLEnum(StorageType), default=StorageType.LOCAL)
     nextcloud_path = Column(String(1000))
@@ -181,7 +176,6 @@ class Image(Base):
         "ImageGroup",
         secondary="image_group_associations",
         back_populates="images",
-        overlaps="group_assignments",
     )
     upload_batch = relationship("UploadBatch", back_populates="images")
     project = relationship("Project", back_populates="images")
@@ -288,11 +282,6 @@ class ImageGroup(Base):
     created_by = Column(String(255))
     upload_batch_id = Column(Integer, ForeignKey("upload_batches.id", ondelete="SET NULL"))
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"))
-
-    # Folder hierarchy support
-    parent_id = Column(Integer, ForeignKey("image_groups.id", ondelete="CASCADE"))
-    sort_order = Column(Integer, default=0)
-
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -300,19 +289,14 @@ class ImageGroup(Base):
         "Image",
         secondary="image_group_associations",
         back_populates="groups",
-        overlaps="group_assignments",
     )
     assignments = relationship(
         "ImageGroupAssociation",
         back_populates="group",
         cascade="all, delete-orphan",
-        overlaps="groups,images",
     )
     upload_batch = relationship("UploadBatch", back_populates="group")
     project = relationship("Project", back_populates="groups")
-
-    # Folder hierarchy relationships
-    parent = relationship("ImageGroup", remote_side=[id], backref="children")
 
 
 class ImageGroupAssociation(Base):
@@ -328,5 +312,5 @@ class ImageGroupAssociation(Base):
     attributes = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    group = relationship("ImageGroup", back_populates="assignments", overlaps="groups,images")
-    image = relationship("Image", back_populates="group_assignments", overlaps="groups,images")
+    group = relationship("ImageGroup", back_populates="assignments")
+    image = relationship("Image", back_populates="group_assignments")

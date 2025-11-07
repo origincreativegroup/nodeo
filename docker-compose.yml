@@ -72,6 +72,7 @@ services:
       CLOUDFLARE_STREAM_API_TOKEN: ${CLOUDFLARE_STREAM_API_TOKEN}
     volumes:
       - uploads_data:/app/uploads
+      - ./migrations:/app/migrations  # Development: sync migration files
     restart: unless-stopped
 
 volumes:

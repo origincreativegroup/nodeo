@@ -17,6 +17,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.config import settings
 from app.database import Base
 
+# Import all models so they're registered with Base.metadata
+from app.models import (
+    Project,
+    MediaMetadata,
+    Image,
+    RenameJob,
+    Template,
+    Integration,
+    ProcessingQueue,
+    UploadBatch,
+    ImageGroup,
+    ImageGroupAssociation,
+)
+
 # This is the Alembic Config object
 config = context.config
 
