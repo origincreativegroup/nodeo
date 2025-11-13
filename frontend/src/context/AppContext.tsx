@@ -99,6 +99,10 @@ interface AppContextType {
     tags: string[],
     operation?: 'replace' | 'add' | 'remove'
   ) => Promise<void>
+  // Folder management
+  createFolder: (name: string, description?: string, parentId?: number) => Promise<void>
+  deleteFolder: (folderId: number) => Promise<void>
+  renameFolder: (folderId: number, newName: string) => Promise<void>
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
@@ -230,6 +234,73 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [loadImages, refreshGroups]
   )
 
+  const createFolder = useCallback(
+    async (name: string, description?: string, parentId?: number) => {
+      try {
+        const response = await fetch('/api/folders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, parent_id: parentId }),
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to create folder')
+        }
+
+        await refreshGroups()
+      } catch (error) {
+        console.error('Failed to create folder:', error)
+        throw error
+      }
+    },
+    [refreshGroups]
+  )
+
+  const deleteFolder = useCallback(
+    async (folderId: number) => {
+      try {
+        const response = await fetch(`/api/folders/${folderId}`, {
+          method: 'DELETE',
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to delete folder')
+        }
+
+        await refreshGroups()
+        if (activeGroupFilter === folderId) {
+          setActiveGroupFilter(null)
+        }
+      } catch (error) {
+        console.error('Failed to delete folder:', error)
+        throw error
+      }
+    },
+    [refreshGroups, activeGroupFilter]
+  )
+
+  const renameFolder = useCallback(
+    async (folderId: number, newName: string) => {
+      try {
+        const response = await fetch(`/api/folders/${folderId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName }),
+        })
+
+        if (!response.ok) {
+          throw new Error('Failed to rename folder')
+        }
+
+        await refreshGroups()
+      } catch (error) {
+        console.error('Failed to rename folder:', error)
+        throw error
+      }
+    },
+    [refreshGroups]
+  )
+
   return (
     <AppContext.Provider
       value={{
@@ -250,6 +321,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         activeGroupFilter,
         setActiveGroupFilter,
         bulkUpdateTags,
+        createFolder,
+        deleteFolder,
+        renameFolder,
       }}
     >
       {children}

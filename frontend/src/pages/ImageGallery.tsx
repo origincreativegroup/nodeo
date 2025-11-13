@@ -6,11 +6,25 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import Modal from '../components/Modal'
 import ImageSelectionPanel from '../components/ImageSelectionPanel'
 import BulkRenameModal, { BulkRenamePattern } from '../components/BulkRenameModal'
+import FolderSidebar from '../components/FolderSidebar'
 import toast from 'react-hot-toast'
 import { uploadImages, analyzeImage, batchAnalyzeImages, bulkRenameFiles } from '../services/api'
 
 export default function ImageGallery() {
-  const { images, addImages, removeImage, updateImage, selectedImageIds, clearSelection } = useApp()
+  const {
+    images,
+    addImages,
+    removeImage,
+    updateImage,
+    selectedImageIds,
+    clearSelection,
+    groups,
+    activeGroupFilter,
+    setActiveGroupFilter,
+    createFolder,
+    deleteFolder,
+    renameFolder,
+  } = useApp()
   const [uploading, setUploading] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [viewingImage, setViewingImage] = useState<number | null>(null)
@@ -184,88 +198,110 @@ export default function ImageGallery() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Image Gallery</h1>
-            <p className="text-gray-600 mt-1">
-              {images.length} {images.length === 1 ? 'image' : 'images'}
-              {selectedImageIds.length > 0 && ` · ${selectedImageIds.length} selected`}
-            </p>
+    <div className="flex h-screen bg-gray-50">
+      {/* Folder Sidebar */}
+      <FolderSidebar
+        folders={groups}
+        selectedFolderId={activeGroupFilter}
+        onFolderSelect={setActiveGroupFilter}
+        onFolderCreate={createFolder}
+        onFolderDelete={deleteFolder}
+        onFolderRename={renameFolder}
+        className="w-64 flex-shrink-0"
+      />
+
+      {/* Main Content */}
+      <div className="flex-1 overflow-auto">
+        <div className="container mx-auto px-4 py-8">
+          {/* Header */}
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Image Gallery</h1>
+                <p className="text-gray-600 mt-1">
+                  {images.length} {images.length === 1 ? 'image' : 'images'}
+                  {selectedImageIds.length > 0 && ` · ${selectedImageIds.length} selected`}
+                  {activeGroupFilter && (
+                    <span className="text-blue-600">
+                      {' · '}
+                      {groups.find(g => g.id === activeGroupFilter)?.name || 'Filtered'}
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                {selectedImageIds.length > 0 && (
+                  <Button
+                    variant="secondary"
+                    icon={<Edit2 className="w-5 h-5" />}
+                    onClick={() => setShowBulkRenameModal(true)}
+                  >
+                    Bulk Rename ({selectedImageIds.length})
+                  </Button>
+                )}
+
+                {images.length > 0 && (
+                  <Button
+                    variant="primary"
+                    icon={<Sparkles className="w-5 h-5" />}
+                    onClick={handleBatchAnalyze}
+                    loading={analyzing}
+                    disabled={analyzing}
+                  >
+                    {selectedImageIds.length > 0 ? 'Analyze Selected' : 'Analyze All'}
+                  </Button>
+                )}
+
+                <label className="relative">
+                  <Button
+                    variant="primary"
+                    icon={<Upload className="w-5 h-5" />}
+                    disabled={uploading}
+                    loading={uploading}
+                  >
+                    Upload Images
+                  </Button>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,video/*"
+                    onChange={handleUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    disabled={uploading}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div className="flex gap-3">
-            {selectedImageIds.length > 0 && (
-              <Button
-                variant="secondary"
-                icon={<Edit2 className="w-5 h-5" />}
-                onClick={() => setShowBulkRenameModal(true)}
-              >
-                Bulk Rename ({selectedImageIds.length})
-              </Button>
-            )}
+          {/* Loading state */}
+          {uploading && (
+            <div className="mb-6">
+              <LoadingSpinner text="Uploading images..." />
+            </div>
+          )}
 
-            {images.length > 0 && (
-              <Button
-                variant="primary"
-                icon={<Sparkles className="w-5 h-5" />}
-                onClick={handleBatchAnalyze}
-                loading={analyzing}
-                disabled={analyzing}
-              >
-                {selectedImageIds.length > 0 ? 'Analyze Selected' : 'Analyze All'}
-              </Button>
-            )}
-
-            <label className="relative">
-              <Button
-                variant="primary"
-                icon={<Upload className="w-5 h-5" />}
-                disabled={uploading}
-                loading={uploading}
-              >
-                Upload Images
-              </Button>
-              <input
-                type="file"
-                multiple
-                accept="image/*,video/*"
-                onChange={handleUpload}
-                className="absolute inset-0 opacity-0 cursor-pointer"
-                disabled={uploading}
-              />
-            </label>
-          </div>
+          {/* Image Selection Panel with filters and sorting */}
+          {images.length === 0 && !uploading ? (
+            <div className="text-center py-16 bg-white rounded-lg shadow">
+              <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-600 text-lg mb-2">No images uploaded yet</p>
+              <p className="text-gray-500">
+                Click "Upload Images" to get started with AI-powered analysis
+              </p>
+            </div>
+          ) : (
+            <ImageSelectionPanel
+              onDeleteSelected={handleBatchDelete}
+              showActions={true}
+              enableFilters={true}
+              enableSearch={true}
+              enableSorting={true}
+            />
+          )}
         </div>
       </div>
-
-      {/* Loading state */}
-      {uploading && (
-        <div className="mb-6">
-          <LoadingSpinner text="Uploading images..." />
-        </div>
-      )}
-
-      {/* Image Selection Panel with filters and sorting */}
-      {images.length === 0 && !uploading ? (
-        <div className="text-center py-16 bg-white rounded-lg shadow">
-          <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600 text-lg mb-2">No images uploaded yet</p>
-          <p className="text-gray-500">
-            Click "Upload Images" to get started with AI-powered analysis
-          </p>
-        </div>
-      ) : (
-        <ImageSelectionPanel
-          onDeleteSelected={handleBatchDelete}
-          showActions={true}
-          enableFilters={true}
-          enableSearch={true}
-          enableSorting={true}
-        />
-      )}
 
       {/* Image details modal */}
       {selectedImage && (

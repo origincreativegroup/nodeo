@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Check, Trash2, Eye, Edit, MoreVertical } from 'lucide-react';
 import Button from './Button';
 import { ImageData } from '../context/AppContext';
+import InlineRenameInput from './InlineRenameInput';
+import { quickRenameImage } from '../services/api';
 
 type ImageCardVariant = 'grid' | 'list' | 'compact';
 
@@ -13,6 +15,7 @@ interface ImageCardProps {
   onDelete?: (id: number) => void;
   onView?: (image: ImageData) => void;
   onEdit?: (image: ImageData) => void;
+  onRename?: (imageId: number, newFilename: string) => void;
   showActions?: boolean;
   className?: string;
 }
@@ -25,10 +28,13 @@ export default function ImageCard({
   onDelete,
   onView,
   onEdit,
+  onRename,
   showActions = true,
   className = '',
 }: ImageCardProps) {
   const [showMenu, setShowMenu] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [localSuggestedName, setLocalSuggestedName] = useState(image.suggested_filename);
 
   const thumbnailUrl = `/api/images/${image.id}/thumbnail`;
   const sizeInMB = (image.file_size / (1024 * 1024)).toFixed(2);
@@ -40,6 +46,26 @@ export default function ImageCard({
     if (onSelect) {
       onSelect(image.id);
     }
+  };
+
+  const handleRenameAccept = async (newFilename: string) => {
+    try {
+      setIsRenaming(true);
+      await quickRenameImage(image.id, newFilename);
+      if (onRename) {
+        onRename(image.id, newFilename);
+      }
+      setLocalSuggestedName(null);
+    } catch (error) {
+      console.error('Failed to rename image:', error);
+      alert('Failed to rename image. Please try again.');
+    } finally {
+      setIsRenaming(false);
+    }
+  };
+
+  const handleRenameRevert = () => {
+    setLocalSuggestedName(null);
   };
 
   // Grid variant - thumbnail with overlay
@@ -112,9 +138,13 @@ export default function ImageCard({
         </div>
 
         <div className="p-3">
-          <p className="text-sm font-medium text-gray-900 truncate" title={displayName}>
-            {displayName}
-          </p>
+          <InlineRenameInput
+            currentName={displayName}
+            suggestedName={localSuggestedName || undefined}
+            onAccept={handleRenameAccept}
+            onRevert={handleRenameRevert}
+            isEditing={false}
+          />
           <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
             <span>{dimensions}</span>
             <span>{sizeInMB} MB</span>
@@ -179,9 +209,14 @@ export default function ImageCard({
         </div>
 
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-gray-900 truncate">
-            {image.current_filename || displayName}
-          </h3>
+          <InlineRenameInput
+            currentName={displayName}
+            suggestedName={localSuggestedName || undefined}
+            onAccept={handleRenameAccept}
+            onRevert={handleRenameRevert}
+            isEditing={false}
+            className="mb-1"
+          />
           <p className="text-xs text-gray-500 mt-0.5">
             {dimensions} • {sizeInMB} MB
           </p>
@@ -261,10 +296,14 @@ export default function ImageCard({
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-900 truncate">
-            {displayName}
-          </p>
-          <p className="text-xs text-gray-500">
+          <InlineRenameInput
+            currentName={displayName}
+            suggestedName={localSuggestedName || undefined}
+            onAccept={handleRenameAccept}
+            onRevert={handleRenameRevert}
+            isEditing={false}
+          />
+          <p className="text-xs text-gray-500 mt-0.5">
             {dimensions}
           </p>
         </div>
