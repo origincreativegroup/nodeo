@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     max_batch_size: int = 50
     process_timeout_seconds: int = 300
 
+    # v2 - Folder Monitoring
+    watcher_scan_interval: int = 60  # seconds between rescans
+    watcher_max_folders: int = 10  # limit concurrent watched folders
+    watcher_file_extensions: str = "jpg,jpeg,png,gif,webp,bmp,tiff,mp4,mov,avi,mkv,webm"
+    suggestion_confidence_threshold: float = 0.5  # minimum confidence to show
+    activity_log_retention_days: int = 90  # auto-cleanup old logs
+    max_batch_size_v2: int = 50  # max items for batch operations
+
     @property
     def allowed_image_exts(self) -> List[str]:
         """Get allowed image extensions as list"""
@@ -95,6 +103,11 @@ class Settings(BaseSettings):
     def allowed_video_exts(self) -> List[str]:
         """Get allowed video extensions as list"""
         return [ext.strip().lower() for ext in self.allowed_video_extensions.split(",")]
+
+    @property
+    def watcher_allowed_exts(self) -> List[str]:
+        """Get allowed file extensions for folder watcher as list"""
+        return [ext.strip().lower() for ext in self.watcher_file_extensions.split(",")]
 
 
 # Global settings instance

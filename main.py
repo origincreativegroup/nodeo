@@ -107,10 +107,29 @@ async def lifespan(app: FastAPI):
     logger.info(f"Storage root: {storage_manager.root}")
     logger.info(f"Working directory: {settings.upload_dir}")
 
+    # v2: Initialize folder watcher manager
+    from app.services.folder_watcher import watcher_manager
+    from app.routers.websocket import manager as ws_manager
+    await watcher_manager.start()
+    logger.info("Folder watcher manager started")
+
+    # v2: Start WebSocket broadcast loop
+    await ws_manager.start_broadcast_loop()
+    logger.info("WebSocket broadcast loop started")
+
     yield
 
     # Shutdown
     logger.info("Shutting down jspow...")
+
+    # v2: Stop folder watcher manager
+    await watcher_manager.stop()
+    logger.info("Folder watcher manager stopped")
+
+    # v2: Stop WebSocket broadcast loop
+    await ws_manager.stop_broadcast_loop()
+    logger.info("WebSocket broadcast loop stopped")
+
     await close_db()
     logger.info("Shutdown complete")
 
@@ -131,6 +150,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include v2 routers
+from app.routers import folders, suggestions, activity, websocket
+app.include_router(folders.router)
+app.include_router(suggestions.router)
+app.include_router(activity.router)
+app.include_router(websocket.router)
 
 
 # Request/Response logging middleware
