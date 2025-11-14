@@ -14,9 +14,11 @@ from sqlalchemy import (
     Enum as SQLEnum,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
+from uuid import uuid4
 from app.database import Base
 
 
@@ -180,6 +182,11 @@ class Image(Base):
     upload_batch = relationship("UploadBatch", back_populates="images")
     project = relationship("Project", back_populates="images")
 
+    # v2 Relationships
+    rename_suggestions = relationship("RenameSuggestion", back_populates="asset", cascade="all, delete-orphan")
+    activity_logs = relationship("ActivityLog", back_populates="asset")
+    asset_tags = relationship("AssetTag", back_populates="asset", cascade="all, delete-orphan")
+
 
 class RenameJob(Base):
     """Batch rename job"""
@@ -314,3 +321,134 @@ class ImageGroupAssociation(Base):
 
     group = relationship("ImageGroup", back_populates="assignments")
     image = relationship("Image", back_populates="group_assignments")
+
+
+# ============================================================================
+# JSPOW v2 Models - Automated Folder Monitoring
+# ============================================================================
+
+
+class WatchedFolderStatus(str, Enum):
+    """Status of watched folder"""
+    ACTIVE = "active"
+    PAUSED = "paused"
+    ERROR = "error"
+    SCANNING = "scanning"
+
+
+class SuggestionStatus(str, Enum):
+    """Status of rename suggestion"""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    APPLIED = "applied"
+    FAILED = "failed"
+
+
+class ActivityActionType(str, Enum):
+    """Type of activity action"""
+    RENAME = "rename"
+    APPROVE = "approve"
+    REJECT = "reject"
+    SCAN = "scan"
+    ERROR = "error"
+    FOLDER_ADDED = "folder_added"
+    FOLDER_REMOVED = "folder_removed"
+
+
+class TagType(str, Enum):
+    """Type of tag"""
+    AI = "ai"
+    MANUAL = "manual"
+    SYSTEM = "system"
+
+
+class WatchedFolder(Base):
+    """Watched folders configuration for automated monitoring"""
+    __tablename__ = "watched_folders"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    path = Column(Text, nullable=False, unique=True)
+    name = Column(String(255), nullable=False)
+    status = Column(SQLEnum(WatchedFolderStatus), default=WatchedFolderStatus.ACTIVE, nullable=False)
+    file_count = Column(Integer, default=0)
+    analyzed_count = Column(Integer, default=0)
+    pending_count = Column(Integer, default=0)
+    last_scan_at = Column(DateTime(timezone=True))
+    error_message = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    suggestions = relationship("RenameSuggestion", back_populates="watched_folder", cascade="all, delete-orphan")
+    activity_logs = relationship("ActivityLog", back_populates="watched_folder")
+
+
+class RenameSuggestion(Base):
+    """Rename suggestions queue for automated renaming"""
+    __tablename__ = "rename_suggestions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    watched_folder_id = Column(UUID(as_uuid=True), ForeignKey("watched_folders.id", ondelete="CASCADE"))
+    asset_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"))
+    original_path = Column(Text, nullable=False)
+    original_filename = Column(String(500), nullable=False)
+    suggested_filename = Column(String(500), nullable=False)
+    description = Column(Text)
+    confidence_score = Column(Float)
+    status = Column(SQLEnum(SuggestionStatus), default=SuggestionStatus.PENDING, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    watched_folder = relationship("WatchedFolder", back_populates="suggestions")
+    asset = relationship("Image", back_populates="rename_suggestions")
+
+
+class ActivityLog(Base):
+    """Activity log for all rename operations and system actions"""
+    __tablename__ = "activity_log"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    watched_folder_id = Column(UUID(as_uuid=True), ForeignKey("watched_folders.id", ondelete="SET NULL"))
+    asset_id = Column(Integer, ForeignKey("images.id", ondelete="SET NULL"))
+    action_type = Column(SQLEnum(ActivityActionType), nullable=False)
+    original_filename = Column(String(500))
+    new_filename = Column(String(500))
+    folder_path = Column(Text)
+    status = Column(String(50), nullable=False)  # success, failure
+    error_message = Column(Text)
+    metadata = Column(JSON)  # additional context
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    watched_folder = relationship("WatchedFolder", back_populates="activity_logs")
+    asset = relationship("Image", back_populates="activity_logs")
+
+
+class Tag(Base):
+    """Tags for AI-detected and manual classification"""
+    __tablename__ = "tags"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    name = Column(String(255), nullable=False, unique=True)
+    tag_type = Column(SQLEnum(TagType), default=TagType.AI, nullable=False)
+    usage_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    asset_tags = relationship("AssetTag", back_populates="tag", cascade="all, delete-orphan")
+
+
+class AssetTag(Base):
+    """Mapping table between assets and their tags"""
+    __tablename__ = "asset_tags"
+
+    asset_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), primary_key=True)
+    tag_id = Column(UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+    confidence = Column(Float)  # for AI tags
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    asset = relationship("Image", back_populates="asset_tags")
+    tag = relationship("Tag", back_populates="asset_tags")

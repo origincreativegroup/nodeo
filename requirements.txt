@@ -40,6 +40,12 @@ psutil==5.9.8
 # Background Tasks
 apscheduler==3.10.4
 
+# Folder Monitoring (v2)
+watchdog==4.0.0
+
+# WebSocket Support (v2)
+websockets==12.0
+
 # Testing
 pytest==7.4.4
 pytest-asyncio==0.23.3
