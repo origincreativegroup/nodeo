@@ -426,3 +426,53 @@ async def get_suggestions_stats(db: AsyncSession = Depends(get_db)):
         "failed": status_map.get(SuggestionStatus.FAILED, 0),
         "average_confidence": round(float(avg_conf), 2)
     }
+
+
+# ============================================================================
+# Rename Execution Endpoints
+# ============================================================================
+
+@router.post("/{suggestion_id}/execute")
+async def execute_suggestion(
+    suggestion_id: UUID,
+    create_backup: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Execute an approved rename suggestion
+    """
+    from app.workers.rename_executor import rename_executor
+
+    result = await rename_executor.execute_suggestion(
+        suggestion_id,
+        create_backup=create_backup
+    )
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Failed to execute rename")
+        )
+
+    return result
+
+
+@router.post("/batch-execute")
+async def batch_execute_suggestions(
+    request: BatchActionRequest,
+    create_backups: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Execute multiple approved suggestions at once
+    """
+    from app.workers.rename_executor import rename_executor
+
+    suggestion_uuids = [UUID(sid) for sid in request.suggestion_ids]
+
+    result = await rename_executor.execute_batch(
+        suggestion_uuids,
+        create_backups=create_backups
+    )
+
+    return result

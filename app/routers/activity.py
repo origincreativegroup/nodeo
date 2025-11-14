@@ -294,3 +294,24 @@ async def cleanup_old_logs(
         "deleted_count": count,
         "cutoff_date": cutoff_date.isoformat()
     }
+
+
+@router.post("/{activity_id}/rollback")
+async def rollback_rename(
+    activity_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Rollback a rename operation using its activity log entry
+    """
+    from app.workers.rename_executor import rename_executor
+
+    result = await rename_executor.rollback_rename(activity_id)
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Failed to rollback rename")
+        )
+
+    return result

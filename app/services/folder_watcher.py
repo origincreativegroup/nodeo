@@ -322,19 +322,20 @@ class WatcherManager:
         logger.info("Processing queue worker stopped")
 
     async def _process_file(self, folder_id: UUID, file_path: str):
-        """Process a single file (stub for now - will be implemented in workers)"""
+        """Process a single file using the file processor worker"""
         logger.info(f"Processing file: {file_path}")
 
-        # TODO: This will be implemented in the workers module
-        # For now, just log the file
-        # In the full implementation, this will:
-        # 1. Check if file already exists in database
-        # 2. Upload/import the file
-        # 3. Analyze with AI
-        # 4. Generate rename suggestion
-        # 5. Create ActivityLog entry
+        try:
+            from app.workers.file_processor import file_processor
+            success = await file_processor.process_file(folder_id, file_path)
 
-        pass
+            if success:
+                logger.info(f"Successfully processed: {file_path}")
+            else:
+                logger.warning(f"Failed to process: {file_path}")
+
+        except Exception as e:
+            logger.error(f"Error processing file {file_path}: {e}", exc_info=True)
 
     async def set_folder_error(self, folder_id: UUID, error_message: str):
         """Set folder to error status"""
