@@ -152,11 +152,12 @@ app.add_middleware(
 )
 
 # Include v2 routers
-from app.routers import folders, suggestions, activity, websocket
+from app.routers import folders, suggestions, activity, websocket, settings as settings_router
 app.include_router(folders.router)
 app.include_router(suggestions.router)
 app.include_router(activity.router)
 app.include_router(websocket.router)
+app.include_router(settings_router.router)
 
 
 # Request/Response logging middleware
