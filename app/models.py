@@ -452,3 +452,80 @@ class AssetTag(Base):
     # Relationships
     asset = relationship("Image", back_populates="asset_tags")
     tag = relationship("Tag", back_populates="asset_tags")
+
+
+# ============================================================================
+# CSV Import Models - Bulk Asset Upload via CSV
+# ============================================================================
+
+
+class CSVImportStatus(str, Enum):
+    """Status of CSV import job"""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    PARTIALLY_COMPLETED = "partially_completed"
+
+
+class CSVImport(Base):
+    """CSV import job tracking"""
+    __tablename__ = "csv_imports"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    filename = Column(String(500), nullable=False)
+    file_path = Column(String(1000), nullable=False)
+    status = Column(SQLEnum(CSVImportStatus), default=CSVImportStatus.PENDING, nullable=False)
+    total_rows = Column(Integer, default=0)
+    processed_rows = Column(Integer, default=0)
+    matched_rows = Column(Integer, default=0)
+    failed_rows = Column(Integer, default=0)
+    error_message = Column(Text)
+    metadata = Column(JSON)  # Additional import settings/info
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+
+    # Relationships
+    rows = relationship("CSVImportRow", back_populates="csv_import", cascade="all, delete-orphan")
+
+
+class CSVImportRowStatus(str, Enum):
+    """Status of individual CSV import row"""
+    PENDING = "pending"
+    MATCHED = "matched"
+    NOT_FOUND = "not_found"
+    ERROR = "error"
+
+
+class CSVImportRow(Base):
+    """Individual row from CSV import"""
+    __tablename__ = "csv_import_rows"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    csv_import_id = Column(UUID(as_uuid=True), ForeignKey("csv_imports.id", ondelete="CASCADE"), nullable=False)
+    row_number = Column(Integer, nullable=False)
+    status = Column(SQLEnum(CSVImportRowStatus), default=CSVImportRowStatus.PENDING, nullable=False)
+
+    # CSV Column Data
+    priority = Column(String(50))
+    category = Column(String(255))
+    page_component = Column(String(255))
+    asset_name = Column(String(500))
+    file_path = Column(String(1000))
+    dimensions = Column(String(100))
+    format = Column(String(50))
+    file_size_target = Column(String(100))
+    csv_status = Column(String(100))  # renamed from 'status' to avoid conflict
+    notes = Column(Text)
+
+    # Matching results
+    matched_asset_id = Column(Integer, ForeignKey("images.id", ondelete="SET NULL"))
+    match_score = Column(Float)  # confidence of the match
+    error_message = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    processed_at = Column(DateTime(timezone=True))
+
+    # Relationships
+    csv_import = relationship("CSVImport", back_populates="rows")
+    matched_asset = relationship("Image")

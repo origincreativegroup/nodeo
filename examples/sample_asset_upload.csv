@@ -1,0 +1,11 @@
+Priority,Category,Page_Component,Asset_Name,File_Path,Dimensions,Format,File_Size_Target,Status,Notes
+1,Hero,Homepage Banner,hero-banner-main.jpg,/assets/images/hero-banner-main.jpg,1920x1080,jpg,500KB,Needed,Main homepage hero image
+2,Product,Product Grid,product-001.png,/assets/products/product-001.png,800x600,png,200KB,Needed,Product catalog image
+1,Hero,About Page,about-team-photo.jpg,/assets/about/about-team-photo.jpg,1200x800,jpg,300KB,In Progress,Team photo for about page
+3,Icon,Navigation,menu-icon.svg,/assets/icons/menu-icon.svg,64x64,svg,10KB,Complete,Navigation menu icon
+2,Background,Contact Page,contact-bg.jpg,/assets/backgrounds/contact-bg.jpg,1920x1080,jpg,400KB,Needed,Background image for contact page
+1,Logo,Header,company-logo.png,/assets/logos/company-logo.png,400x100,png,50KB,Complete,Main company logo
+2,Product,Product Detail,product-detail-002.jpg,/assets/products/product-detail-002.jpg,1000x1000,jpg,350KB,Needed,Product detail view
+3,Thumbnail,Blog Post,blog-thumbnail-001.jpg,/assets/blog/blog-thumbnail-001.jpg,600x400,jpg,150KB,Needed,Blog post thumbnail
+1,Hero,Services Page,services-hero.jpg,/assets/services/services-hero.jpg,1920x1080,jpg,500KB,In Progress,Services page hero image
+2,Gallery,Portfolio,portfolio-gallery-001.jpg,/assets/portfolio/portfolio-gallery-001.jpg,800x800,jpg,250KB,Needed,Portfolio gallery image
