@@ -20,7 +20,7 @@ export default function Navigation() {
         <div className="flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-2">
             <Image className="w-8 h-8 text-blue-600" />
-            <span className="text-xl font-bold text-gray-900">jspow</span>
+            <span className="text-xl font-bold text-gray-900">nodeo</span>
           </Link>
 
           <div className="flex items-center gap-6">

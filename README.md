@@ -1,10 +1,34 @@
-# jspow
+# nodeo
 
-AI-powered image file renaming and organization tool using LLaVA vision model.
+**Local-first AI media orchestrator for intelligent renaming, tagging, and transcription across images, audio, and video.**
+
+> **Formerly nodeo** - This project has been renamed and repositioned to reflect its evolution from an image-focused tool to a comprehensive multi-modal media organization engine.
+
+## Overview
+
+nodeo is designed to grow from an intelligent image renamer into a full multi-modal media organization engine. It watches your local folders and libraries, analyzes content using AI, and suggests intelligent file renames, tags, and categories across multiple media types.
+
+### Current Capabilities
+
+- **Images**: AI-powered description, tagging, and scene detection using LLaVA vision model
+- **Audio** (early support): Speech-to-text, transcription, and basic tagging
+- **Video** (early support): Transcription, scene/segment naming, and tagging
+- **Automated Folder Monitoring**: Watch directories for new files and process automatically
+- **Batch Renaming**: Custom naming templates with AI-generated variables
+- **Cloud Integration**: Nextcloud WebDAV, Cloudflare R2, and Cloudflare Stream support
+
+### Future Direction
+
+nodeo is evolving into a comprehensive multi-modal orchestrator that handles:
+- Advanced audio analysis and music tagging
+- Video scene segmentation and intelligent chapter marking
+- Cross-media correlation and organization
+- Advanced metadata extraction and management
 
 ## Features
 
-- **AI Image Analysis**: Automatic image description, tagging, and scene detection using LLaVA via Ollama
+- **AI-Powered Analysis**: Automatic content description, tagging, and scene detection using LLaVA via Ollama
+- **Folder Monitoring (v2)**: Real-time watch and analysis of local directories
 - **Batch Renaming**: Custom naming templates with variables like `{description}`, `{tags}`, `{date}`, `{index}`
 - **Preview Mode**: See proposed names before applying changes
 - **Storage Integration**:
@@ -18,7 +42,7 @@ AI-powered image file renaming and organization tool using LLaVA vision model.
 
 ### Backend
 - **FastAPI** - Modern Python web framework
-- **PostgreSQL** - Database for image metadata
+- **PostgreSQL** - Database for media metadata
 - **Redis** - Queue for background processing
 - **Ollama** - Local AI model serving (LLaVA vision model)
 - **SQLAlchemy** - Async ORM
@@ -48,8 +72,8 @@ AI-powered image file renaming and organization tool using LLaVA vision model.
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/jspow.git
-   cd jspow
+   git clone https://github.com/yourusername/nodeo.git
+   cd nodeo
    ```
 
 2. **Create environment file**
@@ -65,13 +89,13 @@ AI-powered image file renaming and organization tool using LLaVA vision model.
 
 4. **Access the application**
    - Local: http://localhost:8002
-   - LAN (with pi-net proxy): https://jspow.lan
+   - LAN (with pi-net proxy): https://nodeo.lan
 
 ## Configuration
 
-See `.env.example` for all available options. Key settings:
+See \`.env.example\` for all available options. Key settings:
 
-```env
+\`\`\`env
 # Ollama (required)
 OLLAMA_HOST=http://192.168.50.248:11434
 OLLAMA_MODEL=llava
@@ -96,7 +120,7 @@ CLOUDFLARE_API_TOKEN=
 CLOUDFLARE_R2_ACCOUNT_ID=
 CLOUDFLARE_R2_ACCESS_KEY_ID=
 CLOUDFLARE_R2_SECRET_ACCESS_KEY=
-CLOUDFLARE_R2_BUCKET=jspow-images
+CLOUDFLARE_R2_BUCKET=nodeo-images
 CLOUDFLARE_R2_ENDPOINT=
 CLOUDFLARE_R2_ORIGINALS_PATH=originals/
 CLOUDFLARE_R2_WORKING_PATH=working/
@@ -104,54 +128,63 @@ CLOUDFLARE_R2_EXPORTS_PATH=exports/
 CLOUDFLARE_R2_METADATA_PATH=metadata/
 CLOUDFLARE_STREAM_ACCOUNT_ID=
 CLOUDFLARE_STREAM_API_TOKEN=
-```
+\`\`\`
 
-## Storage layout
+## Storage Layout
 
-Uploaded assets are now organized under `STORAGE_ROOT` using a deterministic structure to separate working files from immutable originals:
+Uploaded assets are organized under \`STORAGE_ROOT\` using a deterministic structure to separate working files from immutable originals:
 
-```
+\`\`\`
 /app/storage/{type}/{year}/{project}/{asset_id}/
-```
+\`\`\`
 
-- `type` — one of `originals`, `working`, `exports`, or `metadata`
-- `year` — the four digit year the asset was ingested
-- `project` — slug generated from `DEFAULT_PROJECT_CODE` (or a supplied project label)
-- `asset_id` — unique identifier per upload (UUID)
+- \`type\` — one of \`originals\`, \`working\`, \`exports\`, or \`metadata\`
+- \`year\` — the four digit year the asset was ingested
+- \`project\` — slug generated from \`DEFAULT_PROJECT_CODE\` (or a supplied project label)
+- \`asset_id\` — unique identifier per upload (UUID)
 
-Original uploads are preserved in the `originals` tree, while the `working` tree contains the files referenced by the database and rename workflows. Metadata JSON blobs are stored alongside each asset under the `metadata` tree, enabling synchronization tooling to capture publication status and historical context.
+Original uploads are preserved in the \`originals\` tree, while the \`working\` tree contains the files referenced by the database and rename workflows. Metadata JSON blobs are stored alongside each asset under the \`metadata\` tree, enabling synchronization tooling to capture publication status and historical context.
 
-## Manifests and sync preparation
+## Manifests and Sync Preparation
 
-Each `{type}/{year}/{project}` folder can generate a `manifest.json` containing file hashes, stored metadata, and a `published` flag for every asset directory. This supports eventual synchronization with Cloudflare or other remote targets. To generate a manifest, run a short Python snippet (for example from `poetry run python` or the FastAPI shell):
+Each \`{type}/{year}/{project}\` folder can generate a \`manifest.json\` containing file hashes, stored metadata, and a \`published\` flag for every asset directory. This supports eventual synchronization with Cloudflare or other remote targets. To generate a manifest, run a short Python snippet (for example from \`poetry run python\` or the FastAPI shell):
 
-```python
+\`\`\`python
 from app.storage import storage_manager
 
 # Generate manifest for the current year's working copies
 storage_manager.generate_manifest("working", 2024, "general")
-```
+\`\`\`
 
-Manifests live inside the corresponding folder (e.g., `/app/storage/working/2024/general/manifest.json`) and can be consumed by future sync tooling to detect drift between local and remote copies.
+Manifests live inside the corresponding folder (e.g., \`/app/storage/working/2024/general/manifest.json\`) and can be consumed by future sync tooling to detect drift between local and remote copies.
 
 ## Usage
 
 ### Naming Templates
 
 Available variables:
-- `{description}` - AI-generated description
-- `{tags}` - Top AI tags
-- `{scene}` - Scene type
-- `{date}` - Current date
-- `{index}` - Sequential index
+- \`{description}\` - AI-generated description
+- \`{tags}\` - Top AI tags
+- \`{scene}\` - Scene type
+- \`{date}\` - Current date
+- \`{index}\` - Sequential index
 
-**Example:** `{description}_{date}_{index}` → `blue_sky_sunset_20250105_001`
+**Example:** \`{description}_{date}_{index}\` → \`blue_sky_sunset_20250105_001\`
 
 ## Deployment
 
 This project uses GitHub Actions for automatic deployment to pi-forge. Push to main branch to trigger deployment.
 
-Access at: https://jspow.lan (LAN only)
+Access at: https://nodeo.lan (LAN only)
+
+## Migration from nodeo
+
+If you're upgrading from the previous nodeo installation:
+
+1. **Database**: The database name remains compatible. Update your \`DATABASE_URL\` from \`nodeo\` to \`nodeo\` in your environment configuration.
+2. **Storage paths**: Your existing storage will continue to work. Consider updating Nextcloud paths from \`/nodeo\` to \`/nodeo\`.
+3. **Container names**: Docker containers are now named \`nodeo-app\`, \`nodeo-postgres\`, \`nodeo-redis\` instead of \`nodeo-*\`.
+4. **Configuration**: Review your \`.env\` file and update any references to \`nodeo\` to \`nodeo\`.
 
 ## License
 

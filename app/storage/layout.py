@@ -76,7 +76,7 @@ class Manifest:
 
 
 class StorageManager:
-    """Manage the on-disk storage layout for jspow assets."""
+    """Manage the on-disk storage layout for nodeo assets."""
 
     def __init__(self, root: Optional[str] = None):
         self.root = Path(root or settings.storage_root)

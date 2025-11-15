@@ -89,7 +89,7 @@ const FeedbackWidget: React.FC<FeedbackWidgetProps> = ({ isOpen, onClose, prefil
       onClose();
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      toast.error('Failed to submit feedback. Please try again or contact support@jspow.app');
+      toast.error('Failed to submit feedback. Please try again or contact support@nodeo.app');
     } finally {
       setIsSubmitting(false);
     }
@@ -107,7 +107,7 @@ const FeedbackWidget: React.FC<FeedbackWidgetProps> = ({ isOpen, onClose, prefil
               {prefilledError ? 'Report an Issue' : 'Send Feedback'}
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Help us improve jspow by sharing your experience
+              Help us improve nodeo by sharing your experience
             </p>
           </div>
           <button

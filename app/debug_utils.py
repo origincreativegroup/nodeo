@@ -1,4 +1,4 @@
-"""Debug utilities for jspow"""
+"""Debug utilities for nodeo"""
 import logging
 import os
 import sys
@@ -286,7 +286,7 @@ def setup_enhanced_logging(log_level: str = "INFO"):
     root_logger.addHandler(console_handler)
 
     # File handler for all logs
-    file_handler = logging.FileHandler(log_dir / "jspow.log")
+    file_handler = logging.FileHandler(log_dir / "nodeo.log")
     file_handler.setLevel(logging.DEBUG)
     file_format = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',

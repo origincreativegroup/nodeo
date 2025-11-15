@@ -1,7 +1,7 @@
-# jspow Development Progress
+# nodeo Development Progress
 
 **Project**: AI-Powered Image File Renaming & Organization Tool
-**Repository**: https://github.com/origincreativegroup/jspow
+**Repository**: https://github.com/origincreativegroup/nodeo
 **Deployment**: http://192.168.50.157:8002 (pi-forge)
 **Date**: November 6, 2025
 
@@ -9,7 +9,7 @@
 
 ## Project Overview
 
-jspow is a full-stack web application that uses local AI (LLaVA via Ollama) to analyze images and automatically rename/organize them with intelligent file management.
+nodeo is a full-stack web application that uses local AI (LLaVA via Ollama) to analyze images and automatically rename/organize them with intelligent file management.
 
 ### Technology Stack
 
@@ -383,7 +383,7 @@ Throughout development, resolved several TS compilation errors:
 ## File Structure
 
 ```
-jspow/
+nodeo/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
@@ -440,7 +440,7 @@ jspow/
 
 **Environment Variables:**
 ```env
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/jspow
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/nodeo
 REDIS_URL=redis://redis:6379/0
 OLLAMA_HOST=http://192.168.50.248:11434
 OLLAMA_MODEL=llava
@@ -457,7 +457,7 @@ git commit -m "message"
 git push origin main
 
 # On pi-forge
-cd /home/admin/jspow
+cd /home/admin/nodeo
 git pull
 docker compose down
 docker compose build
@@ -562,7 +562,7 @@ docker compose up -d
 
 ## Contact & Repository
 
-**GitHub**: https://github.com/origincreativegroup/jspow
+**GitHub**: https://github.com/origincreativegroup/nodeo
 **Live Application**: http://192.168.50.157:8002
 **Documentation**: See README.md for user guide
 

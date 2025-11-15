@@ -1,12 +1,12 @@
-# Claude Code Cloud Environment Setup for jspow
+# Claude Code Cloud Environment Setup for nodeo
 
-This guide configures Claude Code to use **pi-forge** as a live testing/deployment target for rapid jspow development.
+This guide configures Claude Code to use **pi-forge** as a live testing/deployment target for rapid nodeo development.
 
 ## 1. Cloud Environment Configuration
 
 ### In Claude Code Dialog:
 
-**Name:** `jspow-pi-forge`
+**Name:** `nodeo-pi-forge`
 
 **Network Access:** `Full network access` ✓
 
@@ -18,16 +18,16 @@ PI_FORGE_HOST=192.168.50.157
 PI_FORGE_USER=admin
 PI_FORGE_DOCKER_HOST=ssh://admin@192.168.50.157
 
-# jspow Service URLs
-JSPOW_URL=https://jspow.lan
-JSPOW_API=https://jspow.lan/api
-JSPOW_PORT=8002
+# nodeo Service URLs
+nodeo_URL=https://nodeo.lan
+nodeo_API=https://nodeo.lan/api
+nodeo_PORT=8002
 
 # Database (PostgreSQL on pi-forge)
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/jspow
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/nodeo
 POSTGRES_HOST=192.168.50.157
 POSTGRES_PORT=5433
-POSTGRES_DB=jspow
+POSTGRES_DB=nodeo
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 
@@ -45,13 +45,13 @@ OLLAMA_MODEL=llava
 NEXTCLOUD_URL=https://nextcloud.lan
 NEXTCLOUD_USERNAME=your_username
 NEXTCLOUD_PASSWORD=your_password
-NEXTCLOUD_BASE_PATH=/jspow
+NEXTCLOUD_BASE_PATH=/nodeo
 
 # Cloudflare R2 (Optional)
 CLOUDFLARE_R2_ACCOUNT_ID=your_account_id
 CLOUDFLARE_R2_ACCESS_KEY_ID=your_access_key
 CLOUDFLARE_R2_SECRET_ACCESS_KEY=your_secret_key
-CLOUDFLARE_R2_BUCKET=jspow-images
+CLOUDFLARE_R2_BUCKET=nodeo-images
 CLOUDFLARE_R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
 
 # Cloudflare Stream (Optional)
@@ -67,7 +67,7 @@ PROCESS_TIMEOUT_SECONDS=300
 # Application
 SECRET_KEY=change-me-to-random-string-min-32-chars
 DEBUG=true
-APP_NAME=jspow
+APP_NAME=nodeo
 APP_VERSION=1.0.0
 HOST=0.0.0.0
 PORT=8002
@@ -80,14 +80,14 @@ PORT=8002
 On your **development machine** (mac-forge or local):
 
 ```bash
-# Generate dedicated SSH key for jspow deployments
-ssh-keygen -t ed25519 -C "claude-code-jspow" -f ~/.ssh/pi-forge-jspow
+# Generate dedicated SSH key for nodeo deployments
+ssh-keygen -t ed25519 -C "claude-code-nodeo" -f ~/.ssh/pi-forge-nodeo
 
 # Copy public key to pi-forge
-ssh-copy-id -i ~/.ssh/pi-forge-jspow.pub admin@192.168.50.157
+ssh-copy-id -i ~/.ssh/pi-forge-nodeo.pub admin@192.168.50.157
 
 # Test connection
-ssh -i ~/.ssh/pi-forge-jspow admin@192.168.50.157 "docker ps"
+ssh -i ~/.ssh/pi-forge-nodeo admin@192.168.50.157 "docker ps"
 ```
 
 ### Configure SSH Config
@@ -98,7 +98,7 @@ Add to `~/.ssh/config`:
 Host pi-forge
     HostName 192.168.50.157
     User admin
-    IdentityFile ~/.ssh/pi-forge-jspow
+    IdentityFile ~/.ssh/pi-forge-nodeo
     StrictHostKeyChecking no
     ServerAliveInterval 60
     ServerAliveCountMax 3
@@ -146,7 +146,7 @@ The `deploy-to-pi-forge.sh` script automates deployment to pi-forge.
 1. **Make code changes** in Claude Code
 2. **Quick deploy:** `./deploy-to-pi-forge.sh --quick` (syncs code + restarts containers)
 3. **Check logs:** `./deploy-to-pi-forge.sh --logs`
-4. **Test:** Access https://jspow.lan or http://192.168.50.157:8002
+4. **Test:** Access https://nodeo.lan or http://192.168.50.157:8002
 5. **Iterate:** Repeat steps 1-4
 
 For **major changes** (Dockerfile, dependencies):
@@ -179,26 +179,26 @@ bash deploy-to-pi-forge.sh --logs
 bash deploy-to-pi-forge.sh --status
 
 # SSH into pi-forge for debugging
-ssh pi-forge "cd /home/admin/jspow && docker compose exec jspow-app bash"
+ssh pi-forge "cd /home/admin/nodeo && docker compose exec nodeo-app bash"
 ```
 
 ### Database Access
 ```bash
 # Connect to PostgreSQL on pi-forge
-ssh pi-forge "docker exec -it jspow-postgres psql -U postgres -d jspow"
+ssh pi-forge "docker exec -it nodeo-postgres psql -U postgres -d nodeo"
 
 # Connect to Redis
-ssh pi-forge "docker exec -it jspow-redis redis-cli"
+ssh pi-forge "docker exec -it nodeo-redis redis-cli"
 ```
 
 ## 5. Access URLs
 
-After deployment, jspow is accessible at:
+After deployment, nodeo is accessible at:
 
-- **Reverse Proxy (HTTPS):** https://jspow.lan
+- **Reverse Proxy (HTTPS):** https://nodeo.lan
 - **Direct Access (HTTP):** http://192.168.50.157:8002
-- **API Endpoint:** https://jspow.lan/api
-- **Health Check:** https://jspow.lan/health
+- **API Endpoint:** https://nodeo.lan/api
+- **Health Check:** https://nodeo.lan/health
 
 ## 6. Development Workflow
 
@@ -209,7 +209,7 @@ After deployment, jspow is accessible at:
    ```bash
    ./deploy-to-pi-forge.sh --quick
    ```
-3. **Test in browser:** Open https://jspow.lan
+3. **Test in browser:** Open https://nodeo.lan
 4. **Check logs if needed:**
    ```bash
    ./deploy-to-pi-forge.sh --logs
@@ -256,8 +256,8 @@ wg show
 ./deploy-to-pi-forge.sh --status
 
 # SSH into pi-forge and check manually
-ssh pi-forge "cd /home/admin/jspow && docker compose ps"
-ssh pi-forge "cd /home/admin/jspow && docker compose logs"
+ssh pi-forge "cd /home/admin/nodeo && docker compose ps"
+ssh pi-forge "cd /home/admin/nodeo && docker compose logs"
 ```
 
 ### Service Not Accessible
@@ -270,7 +270,7 @@ ssh pi-forge "cd /home/admin/jspow && docker compose logs"
 curl -v http://192.168.50.157:8002/health
 
 # Test via reverse proxy
-curl -k -v https://jspow.lan/health
+curl -k -v https://nodeo.lan/health
 
 # Check Caddy on pi-net
 ssh admin@192.168.50.70 "sudo journalctl -u caddy -f"
@@ -280,7 +280,7 @@ ssh admin@192.168.50.70 "sudo journalctl -u caddy -f"
 
 ```bash
 # Test PostgreSQL connection
-ssh pi-forge "docker exec jspow-postgres psql -U postgres -d jspow -c 'SELECT 1;'"
+ssh pi-forge "docker exec nodeo-postgres psql -U postgres -d nodeo -c 'SELECT 1;'"
 
 # Check if database is running
 ssh pi-forge "docker compose ps postgres"
@@ -310,7 +310,7 @@ ssh pi-forge "docker compose logs postgres"
 ┌─────────────────────────────────────────┐
 │         Pi-Forge (192.168.50.157)       │
 │  ┌───────────┐  ┌────────┐  ┌────────┐ │
-│  │ jspow-app │→ │ Redis  │  │Postgres│ │
+│  │ nodeo-app │→ │ Redis  │  │Postgres│ │
 │  │ (port     │  │ (6380) │  │ (5433) │ │
 │  │  8002)    │  └────────┘  └────────┘ │
 │  └─────┬─────┘                          │
@@ -320,7 +320,7 @@ ssh pi-forge "docker compose logs postgres"
 ┌─────────────────┐
 │     Pi-Net      │
 │ (192.168.50.70) │  Reverse Proxy
-│  Caddy Proxy    │  https://jspow.lan → 192.168.50.157:8002
+│  Caddy Proxy    │  https://nodeo.lan → 192.168.50.157:8002
 └─────────────────┘
          │
          ↓ AI Services
@@ -333,19 +333,19 @@ ssh pi-forge "docker compose logs postgres"
 
 ## 10. Tips for Claude Code
 
-When Claude Code is working on jspow:
+When Claude Code is working on nodeo:
 
 1. **Use `--quick` by default** - It's much faster for code iterations
 2. **Check logs frequently** - `./deploy-to-pi-forge.sh --logs`
 3. **Test health after deploy** - `./deploy-to-pi-forge.sh --health`
-4. **Access via HTTPS** - https://jspow.lan (Caddy handles TLS)
+4. **Access via HTTPS** - https://nodeo.lan (Caddy handles TLS)
 5. **Database is persistent** - Data survives container restarts
 
 ### Example Claude Code Session
 
 ```bash
 # 1. Make changes to app code
-# (Claude edits files in /Users/origin/GitHub/jspow)
+# (Claude edits files in /Users/origin/GitHub/nodeo)
 
 # 2. Quick deploy
 bash deploy-to-pi-forge.sh --quick
@@ -357,7 +357,7 @@ bash deploy-to-pi-forge.sh --health
 bash deploy-to-pi-forge.sh --logs
 
 # 5. Test in browser or via API
-curl -k https://jspow.lan/api/health
+curl -k https://nodeo.lan/api/health
 ```
 
 ## 11. Next Steps
@@ -369,4 +369,4 @@ curl -k https://jspow.lan/api/health
 
 ---
 
-**Questions?** Check the main jspow README.md or Nexus.lan documentation in `/Users/origin/GitHub/Nexus.lan/`
+**Questions?** Check the main nodeo README.md or Nexus.lan documentation in `/Users/origin/GitHub/Nexus.lan/`

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import path from "node:path";
-import { injectAssets } from "../src/jspow-plugin-assets.mjs";
+import { injectAssets } from "../src/nodeo-plugin-assets.mjs";
 
 const args = process.argv.slice(2);
 const dry = args.includes("--dry") || args.includes("--dry-run");

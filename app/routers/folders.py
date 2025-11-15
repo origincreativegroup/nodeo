@@ -1,5 +1,5 @@
 """
-API endpoints for watched folder management (JSPOW v2)
+API endpoints for watched folder management (nodeo v2)
 """
 import logging
 from typing import List, Optional

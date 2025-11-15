@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# jspow Quick Deploy to Pi-Forge
+# nodeo Quick Deploy to Pi-Forge
 # Usage: ./deploy-to-pi-forge.sh [--build|--restart|--logs|--status]
 #
 
@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Configuration
 PI_FORGE_HOST="${PI_FORGE_HOST:-192.168.50.157}"
 PI_FORGE_USER="${PI_FORGE_USER:-admin}"
-REMOTE_PATH="/home/admin/jspow"
+REMOTE_PATH="/home/admin/nodeo"
 LOCAL_PATH="$(pwd)"
 
 # Helper functions
@@ -125,18 +125,18 @@ health_check() {
     log_info "Checking service health..."
     echo ""
 
-    # Check if jspow is responding
+    # Check if nodeo is responding
     if curl -s -o /dev/null -w "%{http_code}" "http://${PI_FORGE_HOST}:8002/health" | grep -q "200"; then
-        log_success "jspow API is healthy (http://${PI_FORGE_HOST}:8002)"
+        log_success "nodeo API is healthy (http://${PI_FORGE_HOST}:8002)"
     else
-        log_warn "jspow API not responding on port 8002"
+        log_warn "nodeo API not responding on port 8002"
     fi
 
     # Check via Caddy reverse proxy
-    if curl -k -s -o /dev/null -w "%{http_code}" "https://jspow.lan/health" | grep -q "200"; then
-        log_success "jspow accessible via reverse proxy (https://jspow.lan)"
+    if curl -k -s -o /dev/null -w "%{http_code}" "https://nodeo.lan/health" | grep -q "200"; then
+        log_success "nodeo accessible via reverse proxy (https://nodeo.lan)"
     else
-        log_warn "jspow not accessible via Caddy reverse proxy"
+        log_warn "nodeo not accessible via Caddy reverse proxy"
     fi
 }
 
@@ -156,7 +156,7 @@ full_deploy() {
 
     echo ""
     log_success "Deployment complete!"
-    log_info "Access jspow at: https://jspow.lan"
+    log_info "Access nodeo at: https://nodeo.lan"
     log_info "Direct access: http://${PI_FORGE_HOST}:8002"
 }
 
@@ -207,7 +207,7 @@ case "${1:-}" in
         quick_deploy
         ;;
     --help)
-        echo "jspow Deployment Script"
+        echo "nodeo Deployment Script"
         echo ""
         echo "Usage: ./deploy-to-pi-forge.sh [OPTION]"
         echo ""

@@ -1,5 +1,5 @@
 """
-API endpoints for activity log (JSPOW v2)
+API endpoints for activity log (nodeo v2)
 """
 import logging
 from typing import List, Optional

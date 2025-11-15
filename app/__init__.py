@@ -1,5 +1,5 @@
 """
-jspow - AI-powered image file renaming and organization tool
+nodeo - Local-first AI media orchestrator for intelligent renaming, tagging, and transcription
 """
 
 __version__ = "1.0.0"

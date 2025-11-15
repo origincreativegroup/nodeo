@@ -90,12 +90,12 @@ async def diagnose_images():
             print()
             if null_path_images:
                 print("# Delete images with NULL file_path:")
-                print("docker exec -it jspow-postgres psql -U postgres -d jspow -c \"DELETE FROM images WHERE file_path IS NULL OR file_path = '';\"")
+                print("docker exec -it nodeo-postgres psql -U postgres -d nodeo -c \"DELETE FROM images WHERE file_path IS NULL OR file_path = '';\"")
                 print()
             if missing_files:
                 print("# Delete images with missing files:")
                 ids_str = ",".join(str(img.id) for img in missing_files[:50])
-                print(f"docker exec -it jspow-postgres psql -U postgres -d jspow -c \"DELETE FROM images WHERE id IN ({ids_str});\"")
+                print(f"docker exec -it nodeo-postgres psql -U postgres -d nodeo -c \"DELETE FROM images WHERE id IN ({ids_str});\"")
         else:
             print("✓ No issues found! All thumbnails should be loading correctly.")
 
