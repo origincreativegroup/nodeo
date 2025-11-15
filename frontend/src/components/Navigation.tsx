@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Image, FileText, Cloud, Settings, Home, FolderSync, Sparkles } from 'lucide-react'
+import { Image, FileText, Cloud, Settings, Home, FolderSync, Sparkles, History } from 'lucide-react'
 
 export default function Navigation() {
   const location = useLocation()
@@ -12,6 +12,7 @@ export default function Navigation() {
     { path: '/rename', icon: FileText, label: 'Rename' },
     { path: '/v2/folders', icon: FolderSync, label: 'Auto Monitor', badge: 'v2' },
     { path: '/v2/suggestions', icon: Sparkles, label: 'Suggestions', badge: 'v2' },
+    { path: '/v2/activity', icon: History, label: 'Activity', badge: 'v2' },
     { path: '/storage', icon: Cloud, label: 'Storage' },
     { path: '/settings', icon: Settings, label: 'Settings' },
   ]

@@ -13,6 +13,7 @@ import FloatingFeedbackButton from './components/FloatingFeedbackButton'
 // v2 Pages
 import FolderMonitoring from './pages/v2/FolderMonitoring'
 import SuggestionsQueue from './pages/v2/SuggestionsQueue'
+import ActivityLog from './pages/v2/ActivityLog'
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -42,6 +43,7 @@ function App() {
               {/* v2 Routes */}
               <Route path="/v2/folders" element={<FolderMonitoring />} />
               <Route path="/v2/suggestions" element={<SuggestionsQueue />} />
+              <Route path="/v2/activity" element={<ActivityLog />} />
             </Routes>
             <Toaster position="top-right" />
             <FloatingFeedbackButton />
