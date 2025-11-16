@@ -13,53 +13,30 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white rounded-xl shadow overflow-hidden">
               <img
-                src={`/api/proxy-image?url=https%3A%2F%2Fmedia.jpstas.com%2Fportfolio%2Fimages%2Fmotion-hero-chomp-1920x1440.png`}
+                src="https://media.jpstas.com/portfolio/images/motion-hero-chomp-1920x1440.png"
                 alt="Motion graphic hero"
                 className="w-full h-64 md:h-80 lg:h-96 object-cover"
                 loading="eager"
-                referrerPolicy="no-referrer"
-                crossOrigin="anonymous"
-                onError={(e) => {
-                  // eslint-disable-next-line no-console
-                  console.warn('Hero image failed to load:', e.currentTarget.src)
-                  e.currentTarget.src =
-                    'data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1200\" height=\"600\"><rect width=\"100%\" height=\"100%\" fill=\"%23e5e7eb\"/><text x=\"50%\" y=\"50%\" text-anchor=\"middle\" dy=\".3em\" fill=\"%239ca3af\" font-family=\"Arial\" font-size=\"24\">Motion hero unavailable</text></svg>'
-                }}
+                decoding="async"
+                fetchpriority="high"
               />
             </div>
             <div className="bg-white rounded-xl shadow overflow-hidden">
               <img
-                src={`/api/proxy-image?url=https%3A%2F%2Fmedia.jpstas.com%2Fportfolio%2Fimages%2Fheroes%2Fbrand-evolution-hero.png`}
+                src="https://media.jpstas.com/portfolio/images/heroes/brand-evolution-hero.png"
                 alt="Brand Evolution hero"
                 className="w-full h-64 md:h-80 lg:h-96 object-cover"
                 loading="eager"
-                referrerPolicy="no-referrer"
-                crossOrigin="anonymous"
-                onError={(e) => {
-                  // Fallback to a neutral placeholder and log the failure for debug
-                  // Server may block hotlinking based on Referer; using no-referrer and CORS anonymous
-                  // If still failing, show a simple placeholder
-                  // eslint-disable-next-line no-console
-                  console.warn('Hero image failed to load:', e.currentTarget.src)
-                  e.currentTarget.src =
-                    'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600"><rect width="100%" height="100%" fill="%23e5e7eb"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%239ca3af" font-family="Arial" font-size="24">Brand Evolution hero unavailable</text></svg>'
-                }}
+                decoding="async"
               />
             </div>
             <div className="bg-white rounded-xl shadow overflow-hidden">
               <img
-                src={`/api/proxy-image?url=https%3A%2F%2Fmedia.jpstas.com%2Fportfolio%2Fimages%2Fheroes%2Fgenerative-ai-hero.png`}
+                src="https://media.jpstas.com/portfolio/images/heroes/generative-ai-hero.png"
                 alt="Generative AI hero"
                 className="w-full h-64 md:h-80 lg:h-96 object-cover"
                 loading="lazy"
-                referrerPolicy="no-referrer"
-                crossOrigin="anonymous"
-                onError={(e) => {
-                  // eslint-disable-next-line no-console
-                  console.warn('Hero image failed to load:', e.currentTarget.src)
-                  e.currentTarget.src =
-                    'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600"><rect width="100%" height="100%" fill="%23e5e7eb"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%239ca3af" font-family="Arial" font-size="24">Generative AI hero unavailable</text></svg>'
-                }}
+                decoding="async"
               />
             </div>
           </div>
