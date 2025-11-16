@@ -2,7 +2,7 @@
 
 **Local-first AI media orchestrator for intelligent renaming, tagging, and transcription across images, audio, and video.**
 
-> **Formerly nodeo** - This project has been renamed and repositioned to reflect its evolution from an image-focused tool to a comprehensive multi-modal media organization engine.
+> **Formerly jspow** - This project has been renamed and repositioned to reflect its evolution from an image-focused tool to a comprehensive multi-modal media organization engine.
 
 ## Overview
 
@@ -177,14 +177,14 @@ This project uses GitHub Actions for automatic deployment to pi-forge. Push to m
 
 Access at: https://nodeo.lan (LAN only)
 
-## Migration from nodeo
+## Migration from jspow
 
-If you're upgrading from the previous nodeo installation:
+If you're upgrading from the previous jspow installation:
 
-1. **Database**: The database name remains compatible. Update your \`DATABASE_URL\` from \`nodeo\` to \`nodeo\` in your environment configuration.
-2. **Storage paths**: Your existing storage will continue to work. Consider updating Nextcloud paths from \`/nodeo\` to \`/nodeo\`.
-3. **Container names**: Docker containers are now named \`nodeo-app\`, \`nodeo-postgres\`, \`nodeo-redis\` instead of \`nodeo-*\`.
-4. **Configuration**: Review your \`.env\` file and update any references to \`nodeo\` to \`nodeo\`.
+1. **Database**: Update your \`DATABASE_URL\` from \`jspow\` to \`nodeo\` in your environment configuration.
+2. **Storage paths**: Your existing storage will continue to work. Consider updating Nextcloud paths from \`/jspow\` to \`/nodeo\`.
+3. **Container names**: Docker containers are now named \`nodeo-app\`, \`nodeo-postgres\`, \`nodeo-redis\` instead of \`jspow-*\`.
+4. **Configuration**: Review your \`.env\` file and update any references to \`jspow\` to \`nodeo\`.
 
 ## License
 
