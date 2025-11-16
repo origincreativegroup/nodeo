@@ -19,6 +19,7 @@ export default function Dashboard() {
                 loading="eager"
                 decoding="async"
                 fetchpriority="high"
+                referrerPolicy="no-referrer"
               />
             </div>
             <div className="bg-white rounded-xl shadow overflow-hidden">
@@ -28,6 +29,7 @@ export default function Dashboard() {
                 className="w-full h-64 md:h-80 lg:h-96 object-cover"
                 loading="eager"
                 decoding="async"
+                referrerPolicy="no-referrer"
               />
             </div>
             <div className="bg-white rounded-xl shadow overflow-hidden">
@@ -37,6 +39,7 @@ export default function Dashboard() {
                 className="w-full h-64 md:h-80 lg:h-96 object-cover"
                 loading="lazy"
                 decoding="async"
+                referrerPolicy="no-referrer"
               />
             </div>
           </div>
