@@ -10,6 +10,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Uplo
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -53,6 +54,8 @@ from app.services.project_rename import ProjectRenameService
 from app.ai.project_classifier import ProjectClassifier
 from app.storage.nextcloud_sync import NextcloudSyncService
 from app.storage import nextcloud_client, r2_client, stream_client, storage_manager, metadata_sidecar_writer
+import httpx
+from urllib.parse import urlparse
 
 # Configure enhanced logging
 from app.debug_utils import setup_enhanced_logging, RequestLogger
@@ -924,6 +927,35 @@ async def export_templates(db: AsyncSession = Depends(get_db)):
     }
 
 
+@app.get("/api/proxy-image")
+async def proxy_image(url: str):
+    """Fetch and stream an external image with permissive headers from approved hosts."""
+    try:
+        parsed = urlparse(url)
+        allowed_hosts = {"media.jpstas.com"}
+        if parsed.scheme not in {"http", "https"} or parsed.netloc not in allowed_hosts:
+            raise HTTPException(status_code=400, detail="Host not allowed")
+
+        async with httpx.AsyncClient(follow_redirects=True, timeout=10) as client:
+            resp = await client.get(url, headers={"User-Agent": "nodeo-image-proxy/1.0"})
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail=f"Upstream error {resp.status_code}")
+
+            content_type = resp.headers.get("content-type", "application/octet-stream")
+            headers = {
+                "Cache-Control": "public, max-age=3600",
+                "Access-Control-Allow-Origin": "*",
+            }
+            return StreamingResponse(
+                iter(resp.iter_bytes()),
+                media_type=content_type,
+                headers=headers,
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"proxy_image error for {url}: {e}")
+        raise HTTPException(status_code=500, detail="Proxy fetch failed")
 class RenamePreviewRequest(BaseModel):
     template: str
     image_ids: List[int]
