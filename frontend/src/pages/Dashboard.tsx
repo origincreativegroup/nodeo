@@ -8,6 +8,28 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-12">
+        {/* Hero images */}
+        <section className="mb-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl shadow overflow-hidden">
+              <img
+                src="https://media.jpstas.com/portfolio/images/heroes/brand-evolution-hero.png"
+                alt="Brand Evolution hero"
+                className="w-full h-64 md:h-80 lg:h-96 object-cover"
+                loading="eager"
+              />
+            </div>
+            <div className="bg-white rounded-xl shadow overflow-hidden">
+              <img
+                src="https://media.jpstas.com/portfolio/images/heroes/generative-ai-hero.png"
+                alt="Generative AI hero"
+                className="w-full h-64 md:h-80 lg:h-96 object-cover"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        </section>
+
         <header className="text-center mb-12">
           <h1 className="text-5xl font-bold text-gray-900 mb-3">Welcome to nodeo</h1>
           <p className="text-lg text-gray-600">
