@@ -13,7 +13,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white rounded-xl shadow overflow-hidden">
               <img
-                src="https://media.jpstas.com/portfolio/images/motion-hero-chomp-1920x1440.png"
+                src={`/api/proxy-image?url=${encodeURIComponent('https://media.jpstas.com/portfolio/images/motion-hero-chomp-1920x1440.png')}`}
                 alt="Motion graphic hero"
                 className="w-full h-64 md:h-80 lg:h-96 object-cover"
                 loading="eager"
@@ -24,7 +24,7 @@ export default function Dashboard() {
             </div>
             <div className="bg-white rounded-xl shadow overflow-hidden">
               <img
-                src="https://media.jpstas.com/portfolio/images/heroes/brand-evolution-hero.png"
+                src={`/api/proxy-image?url=${encodeURIComponent('https://media.jpstas.com/portfolio/images/heroes/brand-evolution-hero.png')}`}
                 alt="Brand Evolution hero"
                 className="w-full h-64 md:h-80 lg:h-96 object-cover"
                 loading="eager"
@@ -34,7 +34,7 @@ export default function Dashboard() {
             </div>
             <div className="bg-white rounded-xl shadow overflow-hidden">
               <img
-                src="https://media.jpstas.com/portfolio/images/heroes/generative-ai-hero.png"
+                src={`/api/proxy-image?url=${encodeURIComponent('https://media.jpstas.com/portfolio/images/heroes/generative-ai-hero.png')}`}
                 alt="Generative AI hero"
                 className="w-full h-64 md:h-80 lg:h-96 object-cover"
                 loading="lazy"
