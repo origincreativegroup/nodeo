@@ -1,5 +1,5 @@
 """
-Database models for jspow
+Database models for nodeo
 """
 from sqlalchemy import (
     Column,
@@ -324,7 +324,7 @@ class ImageGroupAssociation(Base):
 
 
 # ============================================================================
-# JSPOW v2 Models - Automated Folder Monitoring
+# nodeo v2 Models - Automated Folder Monitoring
 # ============================================================================
 
 

@@ -4,9 +4,9 @@ This repository owns the manifest and URL mappings for the jpstas.com portfolio.
 
 ## Workflow
 
-1. **Stage files with JSPow**
+1. **Stage files with nodeo**
    - Drop raw files in `assets/_incoming/<project>/<section>/`.
-   - Run `jspow` using `jspow.staging.config.json` to rename and move files into `assets/processed/` while updating `data/jspow.manifest.json`.
+   - Run `nodeo` using `nodeo.staging.config.json` to rename and move files into `assets/processed/` while updating `data/nodeo.manifest.json`.
 
 2. **Update the manifest**
    - Add new entries (alt, caption, notes) to `assets/assets.manifest.json`.
@@ -31,6 +31,6 @@ This repository owns the manifest and URL mappings for the jpstas.com portfolio.
 
 ## References
 
-- `docs/staging-pipeline.md` — staging folders, jspow config, QA checklist
+- `docs/staging-pipeline.md` — staging folders, nodeo config, QA checklist
 - `docs/sync-jpstas.md` — jpstas.com sync instructions
 - `tools/assets-gui/` — lightweight GUI for managing URL maps and running inject jobs

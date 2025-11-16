@@ -1,4 +1,4 @@
-"""Alembic environment configuration for jspow"""
+"""Alembic environment configuration for nodeo"""
 import asyncio
 from logging.config import fileConfig
 import sys

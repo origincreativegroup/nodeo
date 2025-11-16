@@ -1,5 +1,5 @@
 """
-API endpoints for rename suggestions management (JSPOW v2)
+API endpoints for rename suggestions management (nodeo v2)
 """
 import logging
 from typing import List, Optional

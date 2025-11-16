@@ -1,5 +1,5 @@
 """
-WebSocket endpoints for real-time progress updates (JSPOW v2)
+WebSocket endpoints for real-time progress updates (nodeo v2)
 """
 import asyncio
 import logging
@@ -178,7 +178,7 @@ async def websocket_progress(websocket: WebSocket):
         watcher_status = await watcher_manager.get_status()
         await manager.send_personal_message({
             "type": "connected",
-            "message": "Connected to JSPOW v2 progress stream",
+            "message": "Connected to nodeo v2 progress stream",
             "watcher_status": watcher_status
         }, websocket)
 

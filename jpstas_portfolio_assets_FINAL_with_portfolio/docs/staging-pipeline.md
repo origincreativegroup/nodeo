@@ -1,6 +1,6 @@
-# JSPow Asset Staging
+# nodeo Asset Staging
 
-This project owns the source-of-truth manifest for portfolio assets. Use JSPow to normalize raw uploads, emit a manifest, and prep delivery files before syncing into jpstas.com.
+This project owns the source-of-truth manifest for portfolio assets. Use nodeo to normalize raw uploads, emit a manifest, and prep delivery files before syncing into jpstas.com.
 
 ## Folder Layout
 
@@ -21,9 +21,9 @@ Recommended project sections:
 - `detail` — close-ups and supporting visuals
 - `motion` — Cloudflare Stream IDs
 
-## jspow.staging.config.json
+## nodeo.staging.config.json
 
-Run JSPow against the staging directories to rename files predictably and emit a manifest for downstream tooling.
+Run nodeo against the staging directories to rename files predictably and emit a manifest for downstream tooling.
 
 ```json
 {
@@ -37,7 +37,7 @@ Run JSPow against the staging directories to rename files predictably and emit a
     "ext": "webp"
   },
   "manifest": {
-    "path": "data/jspow.manifest.json",
+    "path": "data/nodeo.manifest.json",
     "format": "json"
   },
   "rules": [
@@ -50,16 +50,16 @@ Run JSPow against the staging directories to rename files predictably and emit a
 
 - Keep the `project` folder name aligned with the case study slug (e.g. `brand-evolution`).
 - Use descriptive `descriptor` tokens so downstream exports inherit readable names.
-- The generated `data/jspow.manifest.json` is the bridge between JSPow and jpstas.com—store it under version control.
+- The generated `data/nodeo.manifest.json` is the bridge between nodeo and jpstas.com—store it under version control.
 
 ## Workflow
 
 1. Drop new RAW/WebP files into `assets/_incoming/<project>/<section>/`.
-2. Run `jspow run --config jspow.staging.config.json` to rename and relocate files to `assets/processed/`.
+2. Run `nodeo run --config nodeo.staging.config.json` to rename and relocate files to `assets/processed/`.
 3. Generate WebP/AVIF exports (see `docs/exporting.md` TBD) into `assets/exports/<project>/`.
 4. Update `assets/assets.manifest.json` with new keys, alt text, captions, and notes.
 5. When CDN URLs are available, record them in `assets/urls.json` (or `assets/urls.<project>.json`).
-6. Use `jspow run assets:inject` (dry-run first) to push URLs into Markdown placeholders.
+6. Use `nodeo run assets:inject` (dry-run first) to push URLs into Markdown placeholders.
 7. Run the jpstas.com sync step (see `docs/sync-jpstas.md`) to update the site JSON or Builder.io records.
 
 ## QA Checklist

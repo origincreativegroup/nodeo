@@ -1,8 +1,8 @@
-# jspow Deployment Summary
+# nodeo Deployment Summary
 
 ## Project Overview
 
-**jspow** is an AI-powered image file renaming and organization tool that uses the LLaVA vision model (via Ollama) to automatically analyze images and generate intelligent filenames based on content.
+**nodeo** is an AI-powered image file renaming and organization tool that uses the LLaVA vision model (via Ollama) to automatically analyze images and generate intelligent filenames based on content.
 
 ## Architecture
 
@@ -40,7 +40,7 @@ pi-net (192.168.50.70)
     └── VPN (WireGuard)
     ↓
 pi-forge (192.168.50.157)
-    ├── jspow-app (port 8002)
+    ├── nodeo-app (port 8002)
     ├── PostgreSQL (port 5433)
     ├── Redis (port 6380)
     └── Portainer (port 9000)
@@ -60,8 +60,8 @@ ai-srv (192.168.50.248)
 
 2. **On pi-forge:**
    ```bash
-   mkdir -p /home/admin/jspow
-   cd /home/admin/jspow
+   mkdir -p /home/admin/nodeo
+   cd /home/admin/nodeo
    git clone <repository-url> .
    cp .env.example .env
    # Edit .env with actual credentials
@@ -71,7 +71,7 @@ ai-srv (192.168.50.248)
 
 ```bash
 # On pi-forge
-cd /home/admin/jspow
+cd /home/admin/nodeo
 
 # Configure environment
 nano .env  # Set OLLAMA_HOST, Nextcloud, Cloudflare credentials
@@ -90,7 +90,7 @@ curl http://localhost:8002/health
 On pi-net (`/etc/caddy/Caddyfile`):
 
 ```caddyfile
-jspow.lan {
+nodeo.lan {
     tls internal
     encode zstd gzip
     @notlan not remote_ip 192.168.50.0/24
@@ -113,8 +113,8 @@ Push to main branch triggers GitHub Actions workflow that:
 
 ## Access URLs
 
-- **Application:** https://jspow.lan (LAN only)
-- **API Docs:** https://jspow.lan/docs
+- **Application:** https://nodeo.lan (LAN only)
+- **API Docs:** https://nodeo.lan/docs
 - **Portainer:** http://192.168.50.157:9000
 - **Ollama API:** http://192.168.50.248:11434
 
@@ -158,14 +158,14 @@ curl http://localhost:8002/health
 docker compose ps
 
 # View logs
-docker compose logs -f jspow-app
+docker compose logs -f nodeo-app
 ```
 
 ### Database Access
 
 ```bash
 # Connect to database
-docker compose exec postgres psql -U postgres -d jspow
+docker compose exec postgres psql -U postgres -d nodeo
 
 # List tables
 \dt
@@ -179,7 +179,7 @@ SELECT id, original_filename, ai_description FROM images LIMIT 10;
 ### Update Deployment
 
 ```bash
-cd /home/admin/jspow
+cd /home/admin/nodeo
 git pull
 docker compose down
 docker compose build --no-cache
@@ -189,14 +189,14 @@ docker compose up -d
 ### Backup Database
 
 ```bash
-docker compose exec postgres pg_dump -U postgres jspow | gzip > backup_$(date +%Y%m%d).sql.gz
+docker compose exec postgres pg_dump -U postgres nodeo | gzip > backup_$(date +%Y%m%d).sql.gz
 ```
 
 ### Cleanup
 
 ```bash
 # Remove old backups (keep last 5)
-cd /home/admin/deployments/jspow
+cd /home/admin/deployments/nodeo
 ls -t | tail -n +6 | xargs rm -rf
 
 # Prune Docker images
@@ -219,7 +219,7 @@ docker image prune -a
 2. **Container won't start**
    ```bash
    # Check logs
-   docker compose logs jspow-app
+   docker compose logs nodeo-app
 
    # Verify .env file
    cat .env | grep -v PASSWORD
@@ -262,7 +262,7 @@ pytest tests/ -v
 ## Project Structure
 
 ```
-jspow/
+nodeo/
 ├── app/
 │   ├── ai/                   # LLaVA integration
 │   ├── storage/              # Nextcloud, R2, Stream
@@ -285,7 +285,7 @@ jspow/
 
 1. **Install LLaVA on ai-srv** (if not already installed)
 2. **Deploy to pi-forge** using instructions above
-3. **Configure Caddy** on pi-net for https://jspow.lan
+3. **Configure Caddy** on pi-net for https://nodeo.lan
 4. **Set up GitHub Actions runner** for automated deployments
 5. **Configure Nextcloud and Cloudflare** credentials in `.env`
 

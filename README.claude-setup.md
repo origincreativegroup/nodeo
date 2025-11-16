@@ -1,4 +1,4 @@
-# ✅ Claude Code Setup Complete for jspow
+# ✅ Claude Code Setup Complete for nodeo
 
 ## 📁 Files Created
 
@@ -15,13 +15,13 @@ Open terminal and run:
 
 ```bash
 # Generate SSH key
-ssh-keygen -t ed25519 -C "claude-code-jspow" -f ~/.ssh/pi-forge-jspow
+ssh-keygen -t ed25519 -C "claude-code-nodeo" -f ~/.ssh/pi-forge-nodeo
 
 # Copy to pi-forge (will prompt for password once)
-ssh-copy-id -i ~/.ssh/pi-forge-jspow.pub admin@192.168.50.157
+ssh-copy-id -i ~/.ssh/pi-forge-nodeo.pub admin@192.168.50.157
 
 # Test connection (should work without password)
-ssh -i ~/.ssh/pi-forge-jspow admin@192.168.50.157 "docker ps"
+ssh -i ~/.ssh/pi-forge-nodeo admin@192.168.50.157 "docker ps"
 ```
 
 Add to `~/.ssh/config`:
@@ -29,13 +29,13 @@ Add to `~/.ssh/config`:
 Host pi-forge
     HostName 192.168.50.157
     User admin
-    IdentityFile ~/.ssh/pi-forge-jspow
+    IdentityFile ~/.ssh/pi-forge-nodeo
 ```
 
 ### Step 2: Create Cloud Environment in Claude Code
 
 1. **Open Claude Code** and click "New cloud environment"
-2. **Name:** `jspow-pi-forge`
+2. **Name:** `nodeo-pi-forge`
 3. **Network Access:** Select "Full network access"
 4. **Environment Variables:** Copy-paste from `.env.claude-code` file
 5. Click **"Create environment"**
@@ -43,7 +43,7 @@ Host pi-forge
 ### Step 3: Test Deployment
 
 ```bash
-cd /Users/origin/GitHub/jspow
+cd /Users/origin/GitHub/nodeo
 
 # Test connection
 ./deploy-to-pi-forge.sh --status
@@ -64,7 +64,7 @@ cd /Users/origin/GitHub/jspow
 # 3. View logs
 ./deploy-to-pi-forge.sh --logs
 
-# 4. Test at https://jspow.lan
+# 4. Test at https://nodeo.lan
 ```
 
 ### Common Commands
@@ -81,10 +81,10 @@ cd /Users/origin/GitHub/jspow
 ## 🔗 Access Points
 
 After deployment:
-- **Main App:** https://jspow.lan
+- **Main App:** https://nodeo.lan
 - **Direct:** http://192.168.50.157:8002
-- **API:** https://jspow.lan/api
-- **Health:** https://jspow.lan/health
+- **API:** https://nodeo.lan/api
+- **Health:** https://nodeo.lan/health
 
 ## 🏗️ Architecture
 
@@ -94,13 +94,13 @@ Your Machine (mac-forge)
     │ SSH/rsync (deploy script)
     ↓
 Pi-Forge (192.168.50.157)
-    ├─ jspow-app (port 8002)
+    ├─ nodeo-app (port 8002)
     ├─ PostgreSQL (port 5433)
     ├─ Redis (port 6380)
     │
     ↓ Proxied via Caddy
 Pi-Net (192.168.50.70)
-    └─ Reverse Proxy: https://jspow.lan → 192.168.50.157:8002
+    └─ Reverse Proxy: https://nodeo.lan → 192.168.50.157:8002
 
 AI-Srv (192.168.50.248)
     └─ Ollama API: https://ollama.nexus.lan
@@ -116,7 +116,7 @@ PI_FORGE_HOST=192.168.50.157
 PI_FORGE_USER=admin
 
 # Services
-JSPOW_URL=https://jspow.lan
+nodeo_URL=https://nodeo.lan
 OLLAMA_HOST=https://ollama.nexus.lan
 NEXTCLOUD_URL=https://nextcloud.lan
 
@@ -153,7 +153,7 @@ ping 192.168.50.157
 **Service not accessible?**
 ```bash
 ./deploy-to-pi-forge.sh --health
-curl -k https://jspow.lan/health
+curl -k https://nodeo.lan/health
 ```
 
 ## 📚 Documentation
@@ -176,7 +176,7 @@ curl -k https://jspow.lan/health
 Once you complete Steps 1-3 above, you're ready to:
 1. Make code changes in Claude Code
 2. Run `./deploy-to-pi-forge.sh --quick`
-3. Test at https://jspow.lan
+3. Test at https://nodeo.lan
 4. Iterate rapidly!
 
 ---

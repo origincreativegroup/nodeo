@@ -1,5 +1,5 @@
-// jspow.config.mjs
-import { injectAssets } from "./src/jspow-plugin-assets.mjs";
+// nodeo.config.mjs
+import { injectAssets } from "./src/nodeo-plugin-assets.mjs";
 
 function slugify(input) {
   return input

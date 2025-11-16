@@ -9,9 +9,9 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-12">
         <header className="text-center mb-12">
-          <h1 className="text-5xl font-bold text-gray-900 mb-3">Welcome to jspow</h1>
+          <h1 className="text-5xl font-bold text-gray-900 mb-3">Welcome to nodeo</h1>
           <p className="text-lg text-gray-600">
-            AI-Powered Image Organization & Renaming
+            Local-First AI Media Orchestrator for Images, Audio & Video
           </p>
         </header>
 

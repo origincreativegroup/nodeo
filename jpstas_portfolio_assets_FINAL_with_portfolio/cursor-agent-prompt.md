@@ -7,8 +7,8 @@ Unify jpstas.com’s content and asset pipeline:
 3) Keep GUI controls for Tabs, Missing filter, Missing Summary, and Inject/Dry‑Run.
 
 ## Must-Exist Files
-- `src/jspow-plugin-assets.mjs` (export `injectAssets({ dryRun, root, urlsPath })`).
-- `jspow.config.mjs` (tasks: `assets:inject`, `assets:gui`, `portfolio:update`).
+- `src/nodeo-plugin-assets.mjs` (export `injectAssets({ dryRun, root, urlsPath })`).
+- `nodeo.config.mjs` (tasks: `assets:inject`, `assets:gui`, `portfolio:update`).
 - `assets/assets.manifest.json`, `assets/urls.example.json`, optional per‑project `assets/urls.<slug>.json`.
 - GUI: `tools/assets-gui/server.mjs`, `tools/assets-gui/public/index.html` (tabs, filters, summary, inject buttons).
 
@@ -37,8 +37,8 @@ Tags: `tag1`, `tag2`, ...
 ## Commands to Expose
 ```bash
 # Regenerate portfolio page from case studies
-node -e "import('./jspow.config.mjs').then(m => m.default.tasks['portfolio:update']({ args: [] }))"
-node -e "import('./jspow.config.mjs').then(m => m.default.tasks['portfolio:update']({ args: ['--dry'] }))"  # preview
+node -e "import('./nodeo.config.mjs').then(m => m.default.tasks['portfolio:update']({ args: [] }))"
+node -e "import('./nodeo.config.mjs').then(m => m.default.tasks['portfolio:update']({ args: ['--dry'] }))"  # preview
 
 # Asset injection (global or per-project)
 node scripts/inject-assets.mjs

@@ -15,8 +15,8 @@ jobs:
 
       - name: Set deployment variables
         run: |
-          echo "DEPLOY_DIR=/home/admin/jspow" >> $GITHUB_ENV
-          echo "BACKUP_DIR=/home/admin/deployments/jspow/backup_$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
+          echo "DEPLOY_DIR=/home/admin/nodeo" >> $GITHUB_ENV
+          echo "BACKUP_DIR=/home/admin/deployments/nodeo/backup_$(date +%Y%m%d_%H%M%S)" >> $GITHUB_ENV
           echo "COMMIT_SHA=${{ github.sha }}" >> $GITHUB_ENV
 
       - name: Sync code to deployment directory
@@ -45,7 +45,7 @@ jobs:
           fi
 
       - name: Build and deploy containers
-        working-directory: /home/admin/jspow
+        working-directory: /home/admin/nodeo
         run: |
           # Stop existing containers
           docker compose down || true
@@ -64,10 +64,10 @@ jobs:
         run: |
           # Check migration logs
           echo "Checking migration status..."
-          docker compose -f /home/admin/jspow/docker-compose.yml logs jspow-app | grep -i "migrations"
+          docker compose -f /home/admin/nodeo/docker-compose.yml logs nodeo-app | grep -i "migrations"
 
           # Verify alembic_version table exists
-          docker exec jspow-postgres psql -U postgres -d jspow -c "SELECT version_num FROM alembic_version;" || echo "Note: alembic_version table may not exist yet"
+          docker exec nodeo-postgres psql -U postgres -d nodeo -c "SELECT version_num FROM alembic_version;" || echo "Note: alembic_version table may not exist yet"
 
       - name: Health check
         run: |
@@ -92,24 +92,24 @@ jobs:
       - name: Post-deployment tests
         run: |
           # Check container status
-          docker compose -f /home/admin/jspow/docker-compose.yml ps
+          docker compose -f /home/admin/nodeo/docker-compose.yml ps
 
           # Check logs for errors
-          docker compose -f /home/admin/jspow/docker-compose.yml logs --tail=50 jspow-app
+          docker compose -f /home/admin/nodeo/docker-compose.yml logs --tail=50 nodeo-app
 
       - name: Cleanup old backups
         if: success()
         run: |
           # Keep only last 5 backups
-          cd /home/admin/deployments/jspow/
+          cd /home/admin/deployments/nodeo/
           ls -t | tail -n +6 | xargs -r rm -rf
           echo "Cleaned up old backups"
 
       - name: Create deployment marker
         if: success()
         run: |
-          echo "Deployment successful at $(date)" > /home/admin/jspow/.last_deploy
-          echo "Commit: $COMMIT_SHA" >> /home/admin/jspow/.last_deploy
+          echo "Deployment successful at $(date)" > /home/admin/nodeo/.last_deploy
+          echo "Commit: $COMMIT_SHA" >> /home/admin/nodeo/.last_deploy
 
       - name: Deployment summary
         if: success()
@@ -126,7 +126,7 @@ jobs:
           echo "Deployment failed! Rolling back..."
 
           # Stop failed deployment
-          docker compose -f /home/admin/jspow/docker-compose.yml down || true
+          docker compose -f /home/admin/nodeo/docker-compose.yml down || true
 
           # Restore from backup
           if [ -d "$BACKUP_DIR" ]; then

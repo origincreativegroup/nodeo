@@ -9,7 +9,7 @@
     "ext": "webp"
   },
   "manifest": {
-    "path": "data/jspow.manifest.json",
+    "path": "data/nodeo.manifest.json",
     "format": "json"
   },
   "rules": [

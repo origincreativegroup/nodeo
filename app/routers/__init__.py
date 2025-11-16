@@ -1,3 +1,3 @@
 """
-API routers for JSPOW v2
+API routers for nodeo v2
 """

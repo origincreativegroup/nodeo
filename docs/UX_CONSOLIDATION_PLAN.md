@@ -1,14 +1,14 @@
-# jspow UX Consolidation Plan
+# nodeo UX Consolidation Plan
 
 **Status**: Phase 1 Complete ✅
 **Last Updated**: 2025-11-06
-**Repository**: https://github.com/origincreativegroup/jspow
+**Repository**: https://github.com/origincreativegroup/nodeo
 
 ---
 
 ## Executive Summary
 
-This document outlines the phased approach to unifying jspow's user experience, streamlining workflows, and reducing code duplication. The goal is to create a more maintainable, consistent, and efficient application.
+This document outlines the phased approach to unifying nodeo's user experience, streamlining workflows, and reducing code duplication. The goal is to create a more maintainable, consistent, and efficient application.
 
 ### Key Metrics
 - **Code Reduction**: ~190 lines of duplicate code eliminated (Phase 1)
@@ -593,19 +593,19 @@ interface ImageCardProps {
 ### Useful Commands
 ```bash
 # Build frontend
-cd ~/jspow/frontend && npm run build
+cd ~/nodeo/frontend && npm run build
 
 # Run backend with hot reload
-cd ~/jspow && source venv/bin/activate && uvicorn main:app --reload
+cd ~/nodeo && source venv/bin/activate && uvicorn main:app --reload
 
 # Docker rebuild
-cd ~/jspow && docker compose down && docker compose build && docker compose up -d
+cd ~/nodeo && docker compose down && docker compose build && docker compose up -d
 
 # Run tests
-cd ~/jspow && pytest
+cd ~/nodeo && pytest
 
 # Check types
-cd ~/jspow/frontend && npm run type-check
+cd ~/nodeo/frontend && npm run type-check
 ```
 
 ---

@@ -1,11 +1,11 @@
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: jspow-postgres
+    container_name: nodeo-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: jspow
+      POSTGRES_DB: nodeo
     ports:
       - "5433:5432"  # Different port to avoid conflict with js-craw
     volumes:
@@ -19,7 +19,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: jspow-redis
+    container_name: nodeo-redis
     ports:
       - "6380:6379"  # Different port to avoid conflict
     healthcheck:
@@ -29,9 +29,9 @@ services:
       retries: 5
     restart: unless-stopped
 
-  jspow-app:
+  nodeo-app:
     build: .
-    container_name: jspow-app
+    container_name: nodeo-app
     ports:
       - "8002:8002"
     depends_on:
@@ -45,7 +45,7 @@ services:
       DEBUG: ${DEBUG:-false}
 
       # Database
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/jspow
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/nodeo
 
       # Redis
       REDIS_URL: redis://redis:6379/0
@@ -58,13 +58,13 @@ services:
       NEXTCLOUD_URL: ${NEXTCLOUD_URL:-https://nextcloud.lan}
       NEXTCLOUD_USERNAME: ${NEXTCLOUD_USERNAME}
       NEXTCLOUD_PASSWORD: ${NEXTCLOUD_PASSWORD}
-      NEXTCLOUD_BASE_PATH: ${NEXTCLOUD_BASE_PATH:-/jspow}
+      NEXTCLOUD_BASE_PATH: ${NEXTCLOUD_BASE_PATH:-/nodeo}
 
       # Cloudflare R2
       CLOUDFLARE_R2_ACCOUNT_ID: ${CLOUDFLARE_R2_ACCOUNT_ID}
       CLOUDFLARE_R2_ACCESS_KEY_ID: ${CLOUDFLARE_R2_ACCESS_KEY_ID}
       CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${CLOUDFLARE_R2_SECRET_ACCESS_KEY}
-      CLOUDFLARE_R2_BUCKET: ${CLOUDFLARE_R2_BUCKET:-jspow-images}
+      CLOUDFLARE_R2_BUCKET: ${CLOUDFLARE_R2_BUCKET:-nodeo-images}
       CLOUDFLARE_R2_ENDPOINT: ${CLOUDFLARE_R2_ENDPOINT}
 
       # Cloudflare Stream

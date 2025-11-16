@@ -6,7 +6,7 @@ Use `scripts/sync-jpstacom.mjs` after assets are staged and URLs are available.
 
 - `assets/assets.manifest.json` contains the project entries with alt/caption.
 - `assets/urls.json` (and optional `urls.<project>.json`) include public `https://media.jpstas.com/...` URLs or Cloudflare Stream IDs.
-- `jspow.staging.config.json` processed the latest batch so filenames match the manifest keys.
+- `nodeo.staging.config.json` processed the latest batch so filenames match the manifest keys.
 - The `jpstas.com` repository lives at `../jpstas.com` (override with `--target`).
 
 ## Commands

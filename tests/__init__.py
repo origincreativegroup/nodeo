@@ -1,1 +1,1 @@
-"""Tests for jspow"""
+"""Tests for nodeo"""

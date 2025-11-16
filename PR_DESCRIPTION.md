@@ -166,7 +166,7 @@ Benefits:
 - [ ] Check recent logs: `GET /debug/logs/recent`
 - [ ] Check error logs: `GET /debug/errors/recent`
 - [ ] Verify request logging middleware is working (check logs)
-- [ ] Verify log files created at `logs/jspow.log` and `logs/errors.log`
+- [ ] Verify log files created at `logs/nodeo.log` and `logs/errors.log`
 
 ---
 

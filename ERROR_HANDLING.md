@@ -1,6 +1,6 @@
 # Error Handling and Feedback System
 
-This document describes the comprehensive error handling and user feedback system implemented in jspow.
+This document describes the comprehensive error handling and user feedback system implemented in nodeo.
 
 ## Overview
 
@@ -389,4 +389,4 @@ To test the error handling system:
 For issues with the error handling system itself:
 - Check application logs: `logs/app.log`
 - Use the feedback widget to report bugs
-- Contact: support@jspow.app
+- Contact: support@nodeo.app

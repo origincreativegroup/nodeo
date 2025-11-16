@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Application
     secret_key: str = "change-me-to-random-string-min-32-chars"
     debug: bool = False
-    app_name: str = "jspow"
+    app_name: str = "nodeo"
     app_version: str = "1.0.0"
 
     # Server
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     port: int = 8002
 
     # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@postgres:5432/jspow"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@postgres:5432/nodeo"
 
     # Redis
     redis_url: str = "redis://redis:6379/0"
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     nextcloud_url: str = "https://nextcloud.lan"
     nextcloud_username: str = "admin"
     nextcloud_password: str = "change-me"
-    nextcloud_base_path: str = "/jspow"
+    nextcloud_base_path: str = "/nodeo"
     nextcloud_auto_sync: bool = True  # Auto-sync on project assignment
     nextcloud_sync_strategy: str = "mirror"  # mirror | backup | primary
 
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     cloudflare_r2_account_id: str = ""
     cloudflare_r2_access_key_id: str = ""
     cloudflare_r2_secret_access_key: str = ""
-    cloudflare_r2_bucket: str = "jspow-images"
+    cloudflare_r2_bucket: str = "nodeo-images"
     cloudflare_r2_endpoint: str = ""
     cloudflare_r2_originals_path: str = "originals/"
     cloudflare_r2_working_path: str = "working/"

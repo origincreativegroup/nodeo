@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "assets:inject:dry": "jspow run assets:inject --dry",
-    "assets:inject": "jspow run assets:inject",
+    "assets:inject:dry": "nodeo run assets:inject --dry",
+    "assets:inject": "nodeo run assets:inject",
     "assets:gui": "node tools/assets-gui/server.mjs"
   }
 }

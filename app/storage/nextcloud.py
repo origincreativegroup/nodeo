@@ -27,7 +27,7 @@ class NextcloudClient:
             url: Nextcloud URL (e.g., https://nextcloud.lan)
             username: Nextcloud username
             password: Nextcloud password
-            base_path: Base path for jspow files (e.g., /jspow)
+            base_path: Base path for nodeo files (e.g., /nodeo)
         """
         self.url = url or settings.nextcloud_url
         self.username = username or settings.nextcloud_username

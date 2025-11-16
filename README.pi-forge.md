@@ -1,6 +1,6 @@
-# Pi-Forge Deployment Guide for jspow
+# Pi-Forge Deployment Guide for nodeo
 
-This document describes how to deploy jspow on pi-forge using the same infrastructure pattern as js-craw.
+This document describes how to deploy nodeo on pi-forge using the same infrastructure pattern as js-craw.
 
 ## Infrastructure Overview
 
@@ -11,7 +11,7 @@ This document describes how to deploy jspow on pi-forge using the same infrastru
 
 **Access:**
 - Local: `http://192.168.50.157:8002`
-- Proxied: `https://jspow.lan` (via Caddy on pi-net)
+- Proxied: `https://nodeo.lan` (via Caddy on pi-net)
 
 ## Prerequisites
 
@@ -34,13 +34,13 @@ This document describes how to deploy jspow on pi-forge using the same infrastru
 1. **Create project directory**
    ```bash
    ssh admin@pi-forge
-   mkdir -p /home/admin/jspow
-   cd /home/admin/jspow
+   mkdir -p /home/admin/nodeo
+   cd /home/admin/nodeo
    ```
 
 2. **Clone repository**
    ```bash
-   git clone https://github.com/yourusername/jspow.git .
+   git clone https://github.com/yourusername/nodeo.git .
    ```
 
 3. **Create .env file**
@@ -56,7 +56,7 @@ This document describes how to deploy jspow on pi-forge using the same infrastru
    DEBUG=false
 
    # Database (use container defaults)
-   DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/jspow
+   DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/nodeo
 
    # Redis (use container defaults)
    REDIS_URL=redis://redis:6379/0
@@ -70,13 +70,13 @@ This document describes how to deploy jspow on pi-forge using the same infrastru
    NEXTCLOUD_URL=https://nextcloud.lan
    NEXTCLOUD_USERNAME=admin
    NEXTCLOUD_PASSWORD=your-nextcloud-password
-   NEXTCLOUD_BASE_PATH=/jspow
+   NEXTCLOUD_BASE_PATH=/nodeo
 
    # Cloudflare R2 (configure if using)
    CLOUDFLARE_R2_ACCOUNT_ID=
    CLOUDFLARE_R2_ACCESS_KEY_ID=
    CLOUDFLARE_R2_SECRET_ACCESS_KEY=
-   CLOUDFLARE_R2_BUCKET=jspow-images
+   CLOUDFLARE_R2_BUCKET=nodeo-images
    CLOUDFLARE_R2_ENDPOINT=
 
    # Cloudflare Stream (configure if using)
@@ -86,7 +86,7 @@ This document describes how to deploy jspow on pi-forge using the same infrastru
 
 4. **Create deployment backups directory**
    ```bash
-   mkdir -p /home/admin/deployments/jspow
+   mkdir -p /home/admin/deployments/nodeo
    ```
 
 ## Manual Deployment
@@ -94,7 +94,7 @@ This document describes how to deploy jspow on pi-forge using the same infrastru
 ### First Deployment
 
 ```bash
-cd /home/admin/jspow
+cd /home/admin/nodeo
 
 # Build containers
 docker compose build --no-cache
@@ -106,7 +106,7 @@ docker compose up -d
 docker compose ps
 
 # View logs
-docker compose logs -f jspow-app
+docker compose logs -f nodeo-app
 
 # Test health endpoint
 curl http://localhost:8002/health
@@ -115,7 +115,7 @@ curl http://localhost:8002/health
 ### Update Deployment
 
 ```bash
-cd /home/admin/jspow
+cd /home/admin/nodeo
 
 # Pull latest changes
 git pull
@@ -141,7 +141,7 @@ curl http://localhost:8002/health
    ```bash
    cd /home/admin/docker/github-runner
 
-   # Update docker-compose.yml to add jspow runner
+   # Update docker-compose.yml to add nodeo runner
    # Or create a new runner container
    ```
 
@@ -150,7 +150,7 @@ curl http://localhost:8002/health
    The `.github/workflows/deploy-pi-forge.yml` workflow will:
    - Run on self-hosted runner (pi-forge)
    - Create backup of current deployment
-   - Sync code to `/home/admin/jspow`
+   - Sync code to `/home/admin/nodeo`
    - Build Docker images
    - Deploy containers
    - Run health checks
@@ -194,7 +194,7 @@ sudo nano /etc/caddy/Caddyfile
 Add this block:
 
 ```caddyfile
-jspow.lan {
+nodeo.lan {
     tls internal
     encode zstd gzip
 
@@ -216,7 +216,7 @@ sudo systemctl reload caddy
 Verify:
 
 ```bash
-curl -I https://jspow.lan
+curl -I https://nodeo.lan
 ```
 
 ## Container Management
@@ -228,12 +228,12 @@ curl -I https://jspow.lan
 docker compose ps
 
 # View logs
-docker compose logs -f jspow-app
-docker compose logs -f jspow-postgres
-docker compose logs -f jspow-redis
+docker compose logs -f nodeo-app
+docker compose logs -f nodeo-postgres
+docker compose logs -f nodeo-redis
 
 # Restart service
-docker compose restart jspow-app
+docker compose restart nodeo-app
 
 # Stop all
 docker compose down
@@ -242,14 +242,14 @@ docker compose down
 docker compose up -d
 
 # Rebuild specific service
-docker compose up -d --build jspow-app
+docker compose up -d --build nodeo-app
 ```
 
 ### Using Portainer
 
 Access Portainer at: http://192.168.50.157:9000
 
-1. Navigate to **Stacks** → **jspow**
+1. Navigate to **Stacks** → **nodeo**
 2. View container status, logs, stats
 3. Restart containers
 4. View resource usage
@@ -260,19 +260,19 @@ Access Portainer at: http://192.168.50.157:9000
 
 ```bash
 # Follow logs
-docker compose logs -f jspow-app
+docker compose logs -f nodeo-app
 
 # Last 100 lines
-docker compose logs --tail=100 jspow-app
+docker compose logs --tail=100 nodeo-app
 
 # Search logs
-docker compose logs jspow-app | grep ERROR
+docker compose logs nodeo-app | grep ERROR
 ```
 
 ### Database Logs
 
 ```bash
-docker compose logs jspow-postgres
+docker compose logs nodeo-postgres
 ```
 
 ### Health Monitoring
@@ -285,7 +285,7 @@ curl http://localhost:8002/health
 curl http://localhost:8002/docs
 
 # Database connection test
-docker exec jspow-postgres psql -U postgres -d jspow -c "SELECT 1;"
+docker exec nodeo-postgres psql -U postgres -d nodeo -c "SELECT 1;"
 ```
 
 ## Troubleshooting
@@ -294,7 +294,7 @@ docker exec jspow-postgres psql -U postgres -d jspow -c "SELECT 1;"
 
 ```bash
 # Check logs
-docker compose logs jspow-app
+docker compose logs nodeo-app
 
 # Check if port is in use
 sudo netstat -tlnp | grep 8002
@@ -303,7 +303,7 @@ sudo netstat -tlnp | grep 8002
 cat .env | grep -v PASSWORD
 
 # Test database connection
-docker compose exec postgres psql -U postgres -d jspow
+docker compose exec postgres psql -U postgres -d nodeo
 ```
 
 ### Ollama connection issues
@@ -313,7 +313,7 @@ docker compose exec postgres psql -U postgres -d jspow
 curl http://192.168.50.248:11434/api/tags
 
 # Test from container
-docker compose exec jspow-app curl http://192.168.50.248:11434/api/tags
+docker compose exec nodeo-app curl http://192.168.50.248:11434/api/tags
 
 # Check if LLaVA is installed
 curl http://192.168.50.248:11434/api/tags | grep llava
@@ -323,7 +323,7 @@ curl http://192.168.50.248:11434/api/tags | grep llava
 
 ```bash
 # Connect to database
-docker compose exec postgres psql -U postgres -d jspow
+docker compose exec postgres psql -U postgres -d nodeo
 
 # Check tables
 \dt
@@ -336,7 +336,7 @@ docker compose up -d
 ### Rebuild from scratch
 
 ```bash
-cd /home/admin/jspow
+cd /home/admin/nodeo
 
 # Stop and remove everything
 docker compose down -v
@@ -355,30 +355,30 @@ docker compose up -d
 
 ```bash
 # Backup to file
-docker compose exec postgres pg_dump -U postgres jspow > backup_$(date +%Y%m%d).sql
+docker compose exec postgres pg_dump -U postgres nodeo > backup_$(date +%Y%m%d).sql
 
 # Backup with docker
-docker compose exec postgres pg_dump -U postgres jspow | gzip > backup_$(date +%Y%m%d).sql.gz
+docker compose exec postgres pg_dump -U postgres nodeo | gzip > backup_$(date +%Y%m%d).sql.gz
 ```
 
 ### Restore Database
 
 ```bash
 # Restore from backup
-cat backup_20250105.sql | docker compose exec -T postgres psql -U postgres jspow
+cat backup_20250105.sql | docker compose exec -T postgres psql -U postgres nodeo
 
 # Restore from gzipped backup
-gunzip -c backup_20250105.sql.gz | docker compose exec -T postgres psql -U postgres jspow
+gunzip -c backup_20250105.sql.gz | docker compose exec -T postgres psql -U postgres nodeo
 ```
 
 ### Backup Uploaded Images
 
 ```bash
 # Backup uploads directory
-tar -czf uploads_backup_$(date +%Y%m%d).tar.gz -C /home/admin/jspow uploads/
+tar -czf uploads_backup_$(date +%Y%m%d).tar.gz -C /home/admin/nodeo uploads/
 
 # Or use Docker volume backup
-docker run --rm -v jspow_uploads_data:/data -v $(pwd):/backup alpine tar czf /backup/uploads_backup.tar.gz -C /data .
+docker run --rm -v nodeo_uploads_data:/data -v $(pwd):/backup alpine tar czf /backup/uploads_backup.tar.gz -C /data .
 ```
 
 ## Performance Tuning
@@ -412,7 +412,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002", "--workers", 
 ### Secure .env file
 
 ```bash
-chmod 600 /home/admin/jspow/.env
+chmod 600 /home/admin/nodeo/.env
 ```
 
 ### Update secrets
@@ -430,7 +430,7 @@ nano .env
 The Caddy reverse proxy on pi-net already restricts access to LAN only. To allow VPN access:
 
 ```caddyfile
-jspow.lan {
+nodeo.lan {
     # Allow LAN and VPN
     @notauthorized not remote_ip 192.168.50.0/24 10.0.0.0/24
     respond @notauthorized 403
@@ -444,7 +444,7 @@ jspow.lan {
 ### Update Docker images
 
 ```bash
-cd /home/admin/jspow
+cd /home/admin/nodeo
 
 # Pull latest base images
 docker compose pull
@@ -467,7 +467,7 @@ docker volume prune
 ### Cleanup deployment backups
 
 ```bash
-cd /home/admin/deployments/jspow
+cd /home/admin/deployments/nodeo
 
 # Keep only last 5
 ls -t | tail -n +6 | xargs rm -rf
@@ -491,12 +491,12 @@ ssh admin@ai-srv
 ```
 
 **Key URLs:**
-- App: https://jspow.lan
-- API Docs: https://jspow.lan/docs
+- App: https://nodeo.lan
+- API Docs: https://nodeo.lan/docs
 - Portainer: http://192.168.50.157:9000
 - Ollama: http://192.168.50.248:11434
 
 **Key Directories:**
-- Code: `/home/admin/jspow`
-- Backups: `/home/admin/deployments/jspow`
+- Code: `/home/admin/nodeo`
+- Backups: `/home/admin/deployments/nodeo`
 - Logs: `docker compose logs -f`

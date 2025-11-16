@@ -1,4 +1,4 @@
-"""jspow - AI-powered image file renaming and organization tool
+"""nodeo - Local-first AI media orchestrator for intelligent renaming, tagging, and transcription
 Main FastAPI application"""
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -97,7 +97,7 @@ def serialize_group_summary(summary: GroupSummary) -> Dict[str, Any]:
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown"""
     # Startup
-    logger.info("Starting jspow application...")
+    logger.info("Starting nodeo application...")
     await init_db()
     logger.info("Database initialized")
 
@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down jspow...")
+    logger.info("Shutting down nodeo...")
 
     # v2: Stop folder watcher manager
     await watcher_manager.stop()
@@ -136,7 +136,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="jspow",
+    title="nodeo",
     description="AI-powered image file renaming and organization tool",
     version=settings.app_version,
     lifespan=lifespan
@@ -263,7 +263,7 @@ async def full_health_check(db: AsyncSession = Depends(get_db)):
 async def get_recent_logs(lines: int = 50):
     """Get recent log entries"""
     try:
-        log_file = Path("logs/jspow.log")
+        log_file = Path("logs/nodeo.log")
         if not log_file.exists():
             return {"error": "Log file not found", "logs": []}
 

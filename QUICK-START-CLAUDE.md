@@ -1,12 +1,12 @@
-# Quick Start: Claude Code + jspow + Pi-Forge
+# Quick Start: Claude Code + nodeo + Pi-Forge
 
 ## 🚀 Setup (One-Time)
 
 ### 1. Setup SSH Access
 ```bash
-ssh-keygen -t ed25519 -C "claude-code-jspow" -f ~/.ssh/pi-forge-jspow
-ssh-copy-id -i ~/.ssh/pi-forge-jspow.pub admin@192.168.50.157
-ssh -i ~/.ssh/pi-forge-jspow admin@192.168.50.157 "docker ps"
+ssh-keygen -t ed25519 -C "claude-code-nodeo" -f ~/.ssh/pi-forge-nodeo
+ssh-copy-id -i ~/.ssh/pi-forge-nodeo.pub admin@192.168.50.157
+ssh -i ~/.ssh/pi-forge-nodeo admin@192.168.50.157 "docker ps"
 ```
 
 ### 2. Add to ~/.ssh/config
@@ -14,11 +14,11 @@ ssh -i ~/.ssh/pi-forge-jspow admin@192.168.50.157 "docker ps"
 Host pi-forge
     HostName 192.168.50.157
     User admin
-    IdentityFile ~/.ssh/pi-forge-jspow
+    IdentityFile ~/.ssh/pi-forge-nodeo
 ```
 
 ### 3. Create Claude Code Cloud Environment
-- **Name:** `jspow-pi-forge`
+- **Name:** `nodeo-pi-forge`
 - **Network Access:** `Full network access` ✓
 - **Environment Variables:** Copy from `.env.claude-code`
 
@@ -34,7 +34,7 @@ Host pi-forge
 ./deploy-to-pi-forge.sh --logs
 
 # 4. Test
-open https://jspow.lan
+open https://nodeo.lan
 ```
 
 ### Full Deploy (After Dependencies Change)
@@ -55,10 +55,10 @@ open https://jspow.lan
 
 ## 🔗 Access URLs
 
-- **Main:** https://jspow.lan
+- **Main:** https://nodeo.lan
 - **Direct:** http://192.168.50.157:8002
-- **API:** https://jspow.lan/api
-- **Health:** https://jspow.lan/health
+- **API:** https://nodeo.lan/api
+- **Health:** https://nodeo.lan/health
 
 ## 🐛 Troubleshooting
 
